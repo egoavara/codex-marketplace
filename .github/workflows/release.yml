@@ -146,7 +146,7 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          repositories: homebrew-codex-market
+          repositories: homebrew-codex-marketplace
 
       - name: 버전 및 체크섬 정보 가져오기
         id: info
@@ -173,10 +173,10 @@ jobs:
           echo "linux_amd64=$LINUX_AMD64" >> $GITHUB_OUTPUT
           echo "linux_arm64=$LINUX_ARM64" >> $GITHUB_OUTPUT
 
-      - name: homebrew-codex-market 저장소 체크아웃
+      - name: homebrew-codex-marketplace 저장소 체크아웃
         uses: actions/checkout@v4
         with:
-          repository: egoavara/homebrew-codex-market
+          repository: egoavara/homebrew-codex-marketplace
           token: ${{ steps.app-token.outputs.token }}
           path: homebrew-tap
 

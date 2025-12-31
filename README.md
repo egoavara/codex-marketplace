@@ -7,14 +7,14 @@ Claude의 마켓플레이스 플러그인을 Codex에서 사용할 수 있게 �
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew tap egoavara/codex-market
+brew tap egoavara/codex-marketplace
 brew install codex-market
 ```
 
 특정 버전 설치:
 
 ```bash
-brew install egoavara/codex-market/codex-market@0.1
+brew install egoavara/codex-marketplace/codex-market@0.1
 ```
 
 ### 설치 스크립트
