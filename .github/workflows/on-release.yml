@@ -1,0 +1,151 @@
+name: On Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - release
+
+jobs:
+  debug-pr-info:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: 디버그 정보 출력
+        run: |
+          echo "PR Head Ref: ${{ github.event.pull_request.head.ref }}"
+          echo "PR Base Ref: ${{ github.event.pull_request.base.ref }}"
+          echo "PR Merged: ${{ github.event.pull_request.merged }}"
+
+  on-release:
+    needs: debug-pr-info
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.head.ref, 'pre-release/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 버전 정보 추출
+        id: extract_version
+        run: |
+          echo "원본 Ref: ${{ github.event.pull_request.head.ref }}"
+          VERSION=$(echo ${{ github.event.pull_request.head.ref }} | sed 's/.*pre-release\/v//')
+          echo "추출된 버전: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: version.go에서 버전 확인
+        id: check_version
+        run: |
+          GO_VERSION=$(grep 'Version.*=' internal/version/version.go | sed 's/.*"\(.*\)"/\1/')
+          echo "go_version=$GO_VERSION" >> $GITHUB_OUTPUT
+
+          if [ "$GO_VERSION" != "${{ steps.extract_version.outputs.version }}" ]; then
+            echo "버전 불일치: version.go의 버전($GO_VERSION)이 릴리즈 브랜치 버전(${{ steps.extract_version.outputs.version }})과 다릅니다."
+            exit 1
+          fi
+
+      - name: 릴리즈 태그 생성
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a ${{ steps.extract_version.outputs.tag }} -m "릴리즈 ${{ steps.extract_version.outputs.tag }}"
+          git push origin ${{ steps.extract_version.outputs.tag }}
+
+      - name: GitHub 릴리즈 생성
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.extract_version.outputs.tag }}
+          name: 릴리즈 ${{ steps.extract_version.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: release.yml 워크플로우 트리거
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.extract_version.outputs.tag }}
+        run: |
+          echo "Triggering release workflow for tag $TAG_NAME"
+          gh workflow run release.yml -f tag_name=$TAG_NAME --ref $TAG_NAME
+
+  propagate-to-main:
+    needs: on-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 버전 정보 추출
+        id: extract_version
+        run: |
+          VERSION=$(echo ${{ github.event.pull_request.head.ref }} | sed 's/.*pre-release\/v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "source_branch=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+
+      - name: main 브랜치에 PR 생성
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # propagate 라벨이 없으면 생성
+          if ! gh label list | grep -q "^propagate"; then
+            echo "propagate 라벨 생성 중..."
+            gh label create "propagate" --color "1D76DB" --description "릴리즈 전파 PR"
+          fi
+
+          # PR 생성
+          PR_URL=$(gh pr create \
+            --base main \
+            --head ${{ steps.extract_version.outputs.source_branch }} \
+            --title "main으로 릴리즈 전파: v${{ steps.extract_version.outputs.version }}" \
+            --label "propagate" \
+            --body "## 릴리즈 v${{ steps.extract_version.outputs.version }} 변경사항 main 브랜치 전파
+
+            이 PR은 릴리즈 브랜치의 변경사항을 main 브랜치로 전파합니다.
+
+            ### 자동 병합
+            이 PR은 자동으로 병합됩니다.")
+
+          echo "main으로의 PR이 생성되었습니다: $PR_URL"
+
+      - name: PR 자동 병합
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=$(gh pr list --head ${{ steps.extract_version.outputs.source_branch }} --base main --json number -q '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            echo "PR #$PR_NUMBER 자동 병합 시도 중..."
+            gh pr merge $PR_NUMBER --merge --auto --delete-branch=false
+          else
+            echo "main 브랜치로의 PR을 찾을 수 없습니다."
+          fi
+
+      - name: pre-release 브랜치 삭제
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sleep 10
+          PR_STATE=$(gh pr list --head ${{ steps.extract_version.outputs.source_branch }} --base main --state all --json state -q '.[0].state' 2>/dev/null || echo "UNKNOWN")
+
+          if [ "$PR_STATE" = "MERGED" ] || [ "$PR_STATE" = "UNKNOWN" ]; then
+            echo "pre-release 브랜치 삭제 중: ${{ steps.extract_version.outputs.source_branch }}"
+            git push origin --delete ${{ steps.extract_version.outputs.source_branch }}
+            echo "브랜치가 삭제되었습니다."
+          else
+            echo "main PR이 아직 병합되지 않았습니다. 브랜치를 유지합니다."
+          fi

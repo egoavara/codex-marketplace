@@ -1,0 +1,68 @@
+{
+  "MarketplaceNotFound": {
+    "other": "마켓플레이스 '{{.Name}}'을(를) 찾을 수 없습니다"
+  },
+  "PluginNotFound": {
+    "other": "플러그인 '{{.Plugin}}'을(를) '{{.Marketplace}}'에서 찾을 수 없습니다"
+  },
+  "GitAuthFailed": {
+    "other": "Git 인증 실패: {{.URL}}\n\n다음을 확인하세요:\n  - HTTPS: 'git credential-manager configure' 실행\n  - SSH: ssh-agent에 SSH 키가 추가되었는지 확인"
+  },
+  "GitCloneFailed": {
+    "other": "저장소 복제 실패: {{.Error}}"
+  },
+  "GitPullFailed": {
+    "other": "저장소 업데이트 실패: {{.Error}}"
+  },
+  "AlreadyExists": {
+    "other": "'{{.Name}}'이(가) 이미 존재합니다"
+  },
+  "InvalidManifest": {
+    "other": "유효하지 않은 marketplace.json: {{.Path}}"
+  },
+  "ManifestNotFound": {
+    "other": "{{.Path}}에서 marketplace.json을 찾을 수 없습니다"
+  },
+  "AddSuccess": {
+    "other": "마켓플레이스 '{{.Name}}'이(가) 추가되었습니다 (플러그인 {{.Count}}개)"
+  },
+  "InstallSuccess": {
+    "other": "'{{.Plugin}}@{{.Marketplace}}' 설치 완료 (v{{.Version}})"
+  },
+  "RemoveSuccess": {
+    "other": "'{{.Plugin}}' 삭제 완료"
+  },
+  "UpdateSuccess": {
+    "other": "'{{.Target}}' 업데이트 완료"
+  },
+  "UpdateAllSuccess": {
+    "other": "모든 마켓플레이스가 업데이트되었습니다"
+  },
+  "NoResults": {
+    "other": "'{{.Keyword}}'에 대한 검색 결과가 없습니다"
+  },
+  "SearchResults": {
+    "other": "{{.Count}}개의 플러그인을 찾았습니다:"
+  },
+  "NotInstalled": {
+    "other": "'{{.Plugin}}'이(가) 설치되어 있지 않습니다"
+  },
+  "InvalidPluginIdentifier": {
+    "other": "잘못된 플러그인 식별자 '{{.Identifier}}'. 형식: plugin@marketplace"
+  },
+  "NoMarketplaces": {
+    "other": "등록된 마켓플레이스가 없습니다. 'codex-market add <git-url>'로 추가하세요."
+  },
+  "NoPluginsInstalled": {
+    "other": "설치된 플러그인이 없습니다."
+  },
+  "ListMarketplacesHeader": {
+    "other": "등록된 마켓플레이스:"
+  },
+  "ListPluginsHeader": {
+    "other": "설치된 플러그인:"
+  },
+  "AvailablePluginsHeader": {
+    "other": "사용 가능한 플러그인:"
+  }
+}

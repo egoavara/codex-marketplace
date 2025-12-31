@@ -1,0 +1,134 @@
+name: Release Binary
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: '릴리즈 태그 (예: v0.1.0)'
+        required: true
+        type: string
+
+env:
+  BINARY_NAME: codex-market
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
+
+jobs:
+  build-binaries:
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: darwin
+            arch: amd64
+            runner: macos-latest
+            suffix: darwin-amd64
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+            suffix: darwin-arm64
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+            suffix: linux-amd64
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+            suffix: linux-arm64
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+            suffix: windows-amd64.exe
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Go 설정
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: 버전 정보 추출
+        id: version
+        shell: bash
+        run: |
+          VERSION="${{ env.RELEASE_TAG }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
+      - name: 바이너리 빌드
+        shell: bash
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          LDFLAGS="-s -w"
+          LDFLAGS="$LDFLAGS -X github.com/egoavara/codex-market/internal/version.Version=${{ steps.version.outputs.version }}"
+          LDFLAGS="$LDFLAGS -X github.com/egoavara/codex-market/internal/version.GitCommit=${{ steps.version.outputs.commit }}"
+          LDFLAGS="$LDFLAGS -X github.com/egoavara/codex-market/internal/version.BuildDate=${{ steps.version.outputs.date }}"
+
+          OUTPUT_NAME="${{ env.BINARY_NAME }}"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            OUTPUT_NAME="${OUTPUT_NAME}.exe"
+          fi
+
+          go build -ldflags "$LDFLAGS" -o "$OUTPUT_NAME" .
+          echo "빌드 완료: $OUTPUT_NAME"
+
+      - name: 릴리즈 에셋 업로드
+        if: startsWith(env.RELEASE_TAG, 'v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          SOURCE_NAME="${{ env.BINARY_NAME }}"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            SOURCE_NAME="${SOURCE_NAME}.exe"
+          fi
+
+          ASSET_NAME="${{ env.BINARY_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.suffix }}"
+          cp "$SOURCE_NAME" "$ASSET_NAME"
+
+          echo "업로딩: $ASSET_NAME"
+          gh release upload "${{ env.RELEASE_TAG }}" "$ASSET_NAME" --clobber
+
+  create-checksums:
+    name: Create Checksums
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: startsWith(github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name, 'v')
+
+    steps:
+      - name: 릴리즈 에셋 다운로드
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo ${{ github.repository }} --dir ./assets
+
+      - name: 체크섬 생성
+        run: |
+          cd assets
+          sha256sum * > checksums-sha256.txt
+          cat checksums-sha256.txt
+
+      - name: 체크섬 업로드
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
+        run: |
+          gh release upload "$RELEASE_TAG" ./assets/checksums-sha256.txt --clobber --repo ${{ github.repository }}

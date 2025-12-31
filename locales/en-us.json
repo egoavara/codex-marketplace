@@ -1,0 +1,70 @@
+{
+  "MarketplaceNotFound": {
+    "other": "Marketplace '{{.Name}}' not found"
+  },
+  "PluginNotFound": {
+    "other": "Plugin '{{.Plugin}}' not found in '{{.Marketplace}}'"
+  },
+  "GitAuthFailed": {
+    "other": "Git authentication failed: {{.URL}}\n\nPlease check:\n  - HTTPS: run 'git credential-manager configure'\n  - SSH: ensure your SSH key is added to ssh-agent"
+  },
+  "GitCloneFailed": {
+    "other": "Failed to clone repository: {{.Error}}"
+  },
+  "GitPullFailed": {
+    "other": "Failed to pull repository: {{.Error}}"
+  },
+  "AlreadyExists": {
+    "other": "'{{.Name}}' already exists"
+  },
+  "InvalidManifest": {
+    "other": "Invalid marketplace.json: {{.Path}}"
+  },
+  "ManifestNotFound": {
+    "other": "marketplace.json not found in {{.Path}}"
+  },
+  "AddSuccess": {
+    "one": "Marketplace '{{.Name}}' added ({{.Count}} plugin)",
+    "other": "Marketplace '{{.Name}}' added ({{.Count}} plugins)"
+  },
+  "InstallSuccess": {
+    "other": "'{{.Plugin}}@{{.Marketplace}}' installed (v{{.Version}})"
+  },
+  "RemoveSuccess": {
+    "other": "'{{.Plugin}}' removed"
+  },
+  "UpdateSuccess": {
+    "other": "'{{.Target}}' updated"
+  },
+  "UpdateAllSuccess": {
+    "other": "All marketplaces updated"
+  },
+  "NoResults": {
+    "other": "No results found for '{{.Keyword}}'"
+  },
+  "SearchResults": {
+    "one": "Found {{.Count}} plugin:",
+    "other": "Found {{.Count}} plugins:"
+  },
+  "NotInstalled": {
+    "other": "'{{.Plugin}}' is not installed"
+  },
+  "InvalidPluginIdentifier": {
+    "other": "Invalid plugin identifier '{{.Identifier}}'. Expected format: plugin@marketplace"
+  },
+  "NoMarketplaces": {
+    "other": "No marketplaces registered. Use 'codex-market add <git-url>' to add one."
+  },
+  "NoPluginsInstalled": {
+    "other": "No plugins installed."
+  },
+  "ListMarketplacesHeader": {
+    "other": "Registered Marketplaces:"
+  },
+  "ListPluginsHeader": {
+    "other": "Installed Plugins:"
+  },
+  "AvailablePluginsHeader": {
+    "other": "Available Plugins:"
+  }
+}

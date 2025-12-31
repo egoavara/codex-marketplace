@@ -1,0 +1,97 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '릴리즈 버전 (예: 0.1.0)'
+        required: true
+        type: string
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: 저장소 체크아웃 (main 브랜치)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 디버그 정보 출력
+        run: |
+          echo "현재 브랜치: $(git branch --show-current)"
+          echo "현재 커밋: $(git rev-parse HEAD)"
+          echo "입력된 버전: ${{ github.event.inputs.version }}"
+
+      - name: version.go 업데이트
+        run: |
+          cat > internal/version/version.go << 'EOF'
+          package version
+
+          var (
+              Version   = "${{ github.event.inputs.version }}"
+              GitCommit = ""
+              BuildDate = ""
+          )
+          EOF
+          echo "version.go 업데이트 완료"
+          cat internal/version/version.go
+
+      - name: 변경된 파일 확인
+        run: git status -s
+
+      - name: pre-release 브랜치 생성 및 변경사항 커밋
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          BRANCH_NAME="pre-release/v${{ github.event.inputs.version }}"
+
+          # 원격에 동일한 브랜치가 있으면 삭제
+          if git ls-remote --heads origin $BRANCH_NAME | grep -q $BRANCH_NAME; then
+            echo "기존 브랜치 삭제: $BRANCH_NAME"
+            git push origin --delete $BRANCH_NAME || true
+          fi
+
+          # pre-release 브랜치 생성
+          git checkout -b $BRANCH_NAME
+
+          # 변경사항 커밋
+          git add . || true
+          git commit -m "chore: 버전을 v${{ github.event.inputs.version }}로 업데이트"
+
+          # 브랜치 푸시
+          git push -u origin $BRANCH_NAME
+
+          echo "브랜치 생성 및 푸시 완료: $BRANCH_NAME"
+
+      - name: 풀 리퀘스트 생성
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # release 라벨이 없으면 생성
+          if ! gh label list | grep -q "^release"; then
+            echo "release 라벨 생성 중..."
+            gh label create "release" --color "0E8A16" --description "릴리즈 관련 PR"
+          fi
+
+          PR_URL=$(gh pr create \
+            --base release \
+            --head pre-release/v${{ github.event.inputs.version }} \
+            --title "릴리즈: v${{ github.event.inputs.version }}" \
+            --label "release" \
+            --body "## 릴리즈 준비: v${{ github.event.inputs.version }}
+
+            이 PR은 \`v${{ github.event.inputs.version }}\` 릴리즈를 위한 준비입니다.
+
+            ### 변경사항
+            - version.go 버전 업데이트: \`v${{ github.event.inputs.version }}\`
+
+            이 PR이 병합되면 자동으로 릴리즈 태그가 생성되고 바이너리가 빌드됩니다.")
+
+          echo "풀 리퀘스트가 생성되었습니다: $PR_URL"
