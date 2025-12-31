@@ -132,3 +132,187 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
         run: |
           gh release upload "$RELEASE_TAG" ./assets/checksums-sha256.txt --clobber --repo ${{ github.repository }}
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: create-checksums
+    runs-on: ubuntu-latest
+    if: startsWith(github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name, 'v')
+
+    steps:
+      - name: GitHub App 토큰 생성
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: homebrew-codex-market
+
+      - name: 버전 및 체크섬 정보 가져오기
+        id: info
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
+
+          # 체크섬 다운로드
+          gh release download "$RELEASE_TAG" --pattern "checksums-sha256.txt" --repo ${{ github.repository }}
+
+          # 각 플랫폼 체크섬 추출
+          DARWIN_AMD64=$(grep "darwin-amd64" checksums-sha256.txt | awk '{print $1}')
+          DARWIN_ARM64=$(grep "darwin-arm64" checksums-sha256.txt | awk '{print $1}')
+          LINUX_AMD64=$(grep "linux-amd64" checksums-sha256.txt | awk '{print $1}')
+          LINUX_ARM64=$(grep "linux-arm64" checksums-sha256.txt | awk '{print $1}')
+
+          echo "darwin_amd64=$DARWIN_AMD64" >> $GITHUB_OUTPUT
+          echo "darwin_arm64=$DARWIN_ARM64" >> $GITHUB_OUTPUT
+          echo "linux_amd64=$LINUX_AMD64" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$LINUX_ARM64" >> $GITHUB_OUTPUT
+
+      - name: homebrew-codex-market 저장소 체크아웃
+        uses: actions/checkout@v4
+        with:
+          repository: egoavara/homebrew-codex-market
+          token: ${{ steps.app-token.outputs.token }}
+          path: homebrew-tap
+
+      - name: Formula 디렉토리 생성
+        run: mkdir -p homebrew-tap/Formula
+
+      - name: 메인 Formula 업데이트 (latest)
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+          DARWIN_AMD64: ${{ steps.info.outputs.darwin_amd64 }}
+          DARWIN_ARM64: ${{ steps.info.outputs.darwin_arm64 }}
+          LINUX_AMD64: ${{ steps.info.outputs.linux_amd64 }}
+          LINUX_ARM64: ${{ steps.info.outputs.linux_arm64 }}
+        run: |
+          cat > homebrew-tap/Formula/codex-market.rb << EOF
+          class CodexMarket < Formula
+            desc "CLI tool to manage Claude marketplace plugins for Codex"
+            homepage "https://github.com/egoavara/codex-marketplace"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_intel do
+                url "https://github.com/egoavara/codex-marketplace/releases/download/v#{version}/codex-market-v#{version}-darwin-amd64"
+                sha256 "${DARWIN_AMD64}"
+              end
+              on_arm do
+                url "https://github.com/egoavara/codex-marketplace/releases/download/v#{version}/codex-market-v#{version}-darwin-arm64"
+                sha256 "${DARWIN_ARM64}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/egoavara/codex-marketplace/releases/download/v#{version}/codex-market-v#{version}-linux-amd64"
+                sha256 "${LINUX_AMD64}"
+              end
+              on_arm do
+                url "https://github.com/egoavara/codex-marketplace/releases/download/v#{version}/codex-market-v#{version}-linux-arm64"
+                sha256 "${LINUX_ARM64}"
+              end
+            end
+
+            def install
+              binary_name = "codex-market-v#{version}-"
+              if OS.mac?
+                binary_name += Hardware::CPU.arm? ? "darwin-arm64" : "darwin-amd64"
+              else
+                binary_name += Hardware::CPU.arm? ? "linux-arm64" : "linux-amd64"
+              end
+              bin.install binary_name => "codex-market"
+            end
+
+            def caveats
+              <<~EOS
+                캐시 및 설정 폴더: ~/.config/codex-market/
+                완전 삭제: rm -rf ~/.config/codex-market
+              EOS
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/codex-market version")
+            end
+          end
+          EOF
+
+      - name: 버전별 Formula 생성
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+          MAJOR_MINOR: ${{ steps.info.outputs.major_minor }}
+          DARWIN_AMD64: ${{ steps.info.outputs.darwin_amd64 }}
+          DARWIN_ARM64: ${{ steps.info.outputs.darwin_arm64 }}
+          LINUX_AMD64: ${{ steps.info.outputs.linux_amd64 }}
+          LINUX_ARM64: ${{ steps.info.outputs.linux_arm64 }}
+        run: |
+          # 클래스 이름 생성 (0.1 -> AT01)
+          CLASS_SUFFIX=$(echo "${MAJOR_MINOR}" | tr -d '.')
+          FORMULA_FILE="homebrew-tap/Formula/codex-market@${MAJOR_MINOR}.rb"
+
+          cat > "$FORMULA_FILE" << EOF
+          class CodexMarketAt${CLASS_SUFFIX} < Formula
+            desc "CLI tool to manage Claude marketplace plugins for Codex"
+            homepage "https://github.com/egoavara/codex-marketplace"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_intel do
+                url "https://github.com/egoavara/codex-marketplace/releases/download/v${VERSION}/codex-market-v${VERSION}-darwin-amd64"
+                sha256 "${DARWIN_AMD64}"
+              end
+              on_arm do
+                url "https://github.com/egoavara/codex-marketplace/releases/download/v${VERSION}/codex-market-v${VERSION}-darwin-arm64"
+                sha256 "${DARWIN_ARM64}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/egoavara/codex-marketplace/releases/download/v${VERSION}/codex-market-v${VERSION}-linux-amd64"
+                sha256 "${LINUX_AMD64}"
+              end
+              on_arm do
+                url "https://github.com/egoavara/codex-marketplace/releases/download/v${VERSION}/codex-market-v${VERSION}-linux-arm64"
+                sha256 "${LINUX_ARM64}"
+              end
+            end
+
+            keg_only :versioned_formula
+
+            def install
+              binary_name = "codex-market-v#{version}-"
+              if OS.mac?
+                binary_name += Hardware::CPU.arm? ? "darwin-arm64" : "darwin-amd64"
+              else
+                binary_name += Hardware::CPU.arm? ? "linux-arm64" : "linux-amd64"
+              end
+              bin.install binary_name => "codex-market"
+            end
+
+            test do
+              assert_match "${VERSION}", shell_output("#{bin}/codex-market version")
+            end
+          end
+          EOF
+
+          echo "버전별 Formula 생성됨: $FORMULA_FILE"
+
+      - name: 변경사항 커밋 및 푸시 (homebrew-codex-market)
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
+        run: |
+          cd homebrew-tap
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          git add Formula/
+          git commit -m "chore: Formula 업데이트 (${RELEASE_TAG})" || echo "변경사항 없음"
+          git push origin main
