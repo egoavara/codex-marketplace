@@ -16,8 +16,12 @@ var (
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List registered marketplaces and installed plugins",
+	Short: "List all marketplaces and installed plugins",
 	Long: `List all registered marketplaces and installed plugins.
+
+This is a combined view. For individual lists, use:
+  codex-market marketplace list
+  codex-market plugin list
 
 Example:
   codex-market list

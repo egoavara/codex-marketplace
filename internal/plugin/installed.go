@@ -94,7 +94,7 @@ func (m *InstalledManager) Add(pluginID string, entry InstalledPluginEntry) erro
 	return m.Save(plugins)
 }
 
-// Remove removes an installed plugin
+// Remove removes all entries for an installed plugin
 func (m *InstalledManager) Remove(pluginID string) error {
 	plugins, err := m.Load()
 	if err != nil {
@@ -103,6 +103,82 @@ func (m *InstalledManager) Remove(pluginID string) error {
 
 	delete(plugins.Plugins, pluginID)
 	return m.Save(plugins)
+}
+
+// RemoveByScope removes entries for a plugin matching the given scope
+// scope can be "global", "project", or "all"
+// For "project" scope, projectPath should match current working directory
+func (m *InstalledManager) RemoveByScope(pluginID, scope, projectPath string) ([]InstalledPluginEntry, error) {
+	plugins, err := m.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	entries := plugins.Plugins[pluginID]
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	var removed []InstalledPluginEntry
+	var remaining []InstalledPluginEntry
+
+	for _, entry := range entries {
+		shouldRemove := false
+		switch scope {
+		case "all":
+			shouldRemove = true
+		case "global":
+			shouldRemove = entry.Scope == "global"
+		case "project":
+			shouldRemove = entry.Scope == "project" && entry.ProjectPath == projectPath
+		}
+
+		if shouldRemove {
+			removed = append(removed, entry)
+		} else {
+			remaining = append(remaining, entry)
+		}
+	}
+
+	if len(remaining) == 0 {
+		delete(plugins.Plugins, pluginID)
+	} else {
+		plugins.Plugins[pluginID] = remaining
+	}
+
+	if err := m.Save(plugins); err != nil {
+		return nil, err
+	}
+
+	return removed, nil
+}
+
+// GetByScope returns entries for a plugin matching the given scope
+func (m *InstalledManager) GetByScope(pluginID, scope, projectPath string) ([]InstalledPluginEntry, error) {
+	entries, err := m.Get(pluginID)
+	if err != nil {
+		return nil, err
+	}
+
+	if scope == "all" {
+		return entries, nil
+	}
+
+	var filtered []InstalledPluginEntry
+	for _, entry := range entries {
+		switch scope {
+		case "global":
+			if entry.Scope == "global" {
+				filtered = append(filtered, entry)
+			}
+		case "project":
+			if entry.Scope == "project" && entry.ProjectPath == projectPath {
+				filtered = append(filtered, entry)
+			}
+		}
+	}
+
+	return filtered, nil
 }
 
 // Get returns entries for a specific plugin
