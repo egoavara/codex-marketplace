@@ -5,14 +5,16 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
 	verbose bool
 
 	rootCmd = &cobra.Command{
-		Use:   "codex-market",
-		Short: "CLI tool for managing Claude Code plugins",
+		Use:           "codex-market",
+		Short:         "CLI tool for managing Claude Code plugins",
+		SilenceErrors: true,
 		Long: `codex-market is a third-party CLI tool for managing
 Claude Code plugins from various marketplaces.
 
@@ -32,30 +34,21 @@ Shortcuts (aliases):
 	}
 )
 
-// Alias commands for convenience
-var installAliasCmd = &cobra.Command{
-	Use:    "install <plugin>@<marketplace>",
-	Short:  "Install a plugin (alias for 'plugin install')",
-	Args:   cobra.ExactArgs(1),
-	Hidden: false,
-	RunE:   runPluginInstall,
-}
-
-var uninstallAliasCmd = &cobra.Command{
-	Use:     "uninstall <plugin>@<marketplace>",
-	Aliases: []string{"remove", "rm"},
-	Short:   "Uninstall a plugin (alias for 'plugin uninstall')",
-	Args:    cobra.ExactArgs(1),
-	Hidden:  false,
-	RunE:    runPluginUninstall,
-}
-
-var searchAliasCmd = &cobra.Command{
-	Use:    "search <keyword>",
-	Short:  "Search for plugins (alias for 'plugin search')",
-	Args:   cobra.ExactArgs(1),
-	Hidden: false,
-	RunE:   runPluginSearch,
+// createAliasCommand creates a root-level alias that shares flags with a plugin subcommand
+func createAliasCommand(pluginSubCmd *cobra.Command, aliases []string) *cobra.Command {
+	aliasCmd := &cobra.Command{
+		Use:     pluginSubCmd.Use,
+		Short:   pluginSubCmd.Short + " (alias)",
+		Long:    pluginSubCmd.Long,
+		Args:    pluginSubCmd.Args,
+		Aliases: aliases,
+		RunE:    pluginSubCmd.RunE,
+	}
+	// Copy all flags from the original command
+	pluginSubCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		aliasCmd.Flags().AddFlag(f)
+	})
+	return aliasCmd
 }
 
 // Execute runs the root command
@@ -74,10 +67,13 @@ func init() {
 	rootCmd.AddCommand(pluginCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(configCmd)
+}
 
-	// Alias commands (shortcuts)
-	installAliasCmd.Flags().StringVarP(&pluginInstallScope, "scope", "s", "global", "install scope (global or project)")
-	rootCmd.AddCommand(installAliasCmd)
-	rootCmd.AddCommand(uninstallAliasCmd)
-	rootCmd.AddCommand(searchAliasCmd)
+// RegisterPluginAliases registers root-level aliases for plugin subcommands
+// Must be called after plugin subcommands are initialized
+func RegisterPluginAliases() {
+	rootCmd.AddCommand(createAliasCommand(pluginInstallCmd, nil))
+	rootCmd.AddCommand(createAliasCommand(pluginUninstallCmd, []string{"remove", "rm"}))
+	rootCmd.AddCommand(createAliasCommand(pluginSearchCmd, nil))
+	rootCmd.AddCommand(createAliasCommand(pluginUpdateCmd, nil))
 }

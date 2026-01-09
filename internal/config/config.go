@@ -18,9 +18,29 @@ const (
 	ShareIgnore ShareMode = "ignore"
 )
 
+// AutoUpdateMode defines the auto-update behavior
+type AutoUpdateMode string
+
+const (
+	// AutoUpdateModeNotify shows update notification and asks user
+	AutoUpdateModeNotify AutoUpdateMode = "notify"
+	// AutoUpdateModeAuto automatically applies updates without asking
+	AutoUpdateModeAuto AutoUpdateMode = "auto"
+	// AutoUpdateModeDisabled disables auto-update check
+	AutoUpdateModeDisabled AutoUpdateMode = "disabled"
+)
+
+// AutoUpdateConfig contains auto-update settings
+type AutoUpdateConfig struct {
+	Enabled              bool           `json:"enabled"`              // Enable auto-update feature (default: true)
+	Mode                 AutoUpdateMode `json:"mode"`                 // "notify", "auto", "disabled" (default: notify)
+	RequestOverrideCodex bool           `json:"requestOverrideCodex"` // Whether alias setup was already offered
+}
+
 // Config represents the main configuration file structure
 type Config struct {
-	Locale       string                 `json:"locale"` // "auto" or ISO format (e.g., "ko-KR", "en-US")
+	Locale       string                 `json:"locale"`     // "auto" or ISO format (e.g., "ko-KR", "en-US")
+	AutoUpdate   AutoUpdateConfig       `json:"autoUpdate"` // Auto-update settings
 	Claude       ClaudeConfig           `json:"claude"`
 	Marketplaces map[string]Marketplace `json:"marketplaces"`
 }
@@ -59,6 +79,11 @@ var (
 func NewConfig() *Config {
 	return &Config{
 		Locale: "auto", // default: auto-detect system locale
+		AutoUpdate: AutoUpdateConfig{
+			Enabled:              true,               // default: enabled
+			Mode:                 AutoUpdateModeNotify, // default: notify user
+			RequestOverrideCodex: false,              // default: not yet offered
+		},
 		Claude: ClaudeConfig{
 			Registry: RegistryConfig{
 				Share: ShareIgnore, // default: ignore Claude's registry
@@ -99,6 +124,11 @@ func Load() (*Config, error) {
 	// Set default locale if empty
 	if config.Locale == "" {
 		config.Locale = "auto"
+	}
+
+	// Set default auto-update mode if empty
+	if config.AutoUpdate.Mode == "" {
+		config.AutoUpdate.Mode = AutoUpdateModeNotify
 	}
 
 	return &config, nil

@@ -17,6 +17,9 @@ func main() {
 	lang := getLocale()
 	i18n.Init(localeFS, lang)
 
+	// Register plugin aliases (install, uninstall, search, update)
+	cmd.RegisterPluginAliases()
+
 	cmd.Execute()
 }
 

@@ -33,13 +33,14 @@ type InstalledPlugins struct {
 
 // InstalledPluginEntry represents a single installed plugin entry
 type InstalledPluginEntry struct {
-	Scope       string       `json:"scope"`                 // "global" or "project"
-	ProjectPath string       `json:"projectPath,omitempty"` // only for project scope
-	Version     string       `json:"version"`
-	InstalledAt string       `json:"installedAt"`
-	LastUpdated string       `json:"lastUpdated"`
-	Source      PluginSource `json:"source"`                // where it was installed from
-	Skills      []SkillEntry `json:"skills"`                // installed skills with paths
+	Scope       string         `json:"scope"`                 // "global" or "project"
+	ProjectPath string         `json:"projectPath,omitempty"` // only for project scope
+	Version     string         `json:"version"`
+	InstalledAt string         `json:"installedAt"`
+	LastUpdated string         `json:"lastUpdated"`
+	Source      PluginSource   `json:"source"`                // where it was installed from
+	Skills      []SkillEntry   `json:"skills"`                // installed skills with paths
+	Commands    []CommandEntry `json:"commands,omitempty"`    // installed commands with paths
 }
 
 // PluginSource represents the source of an installed plugin
@@ -53,6 +54,12 @@ type PluginSource struct {
 type SkillEntry struct {
 	Name string `json:"name"` // skill name
 	Path string `json:"path"` // full path to skill folder (for deletion)
+}
+
+// CommandEntry represents an installed command with its path
+type CommandEntry struct {
+	Name string `json:"name"` // command name (without .md extension)
+	Path string `json:"path"` // full path to command file (for deletion)
 }
 
 // NewInstalledPlugins creates a new InstalledPlugins instance

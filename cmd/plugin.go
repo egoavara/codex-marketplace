@@ -7,12 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoavara/codex-market/internal/autoupdate"
 	"github.com/egoavara/codex-market/internal/config"
 	"github.com/egoavara/codex-market/internal/git"
 	"github.com/egoavara/codex-market/internal/i18n"
 	"github.com/egoavara/codex-market/internal/marketplace"
 	"github.com/egoavara/codex-market/internal/plugin"
 	"github.com/egoavara/codex-market/internal/search"
+	"github.com/egoavara/codex-market/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -75,11 +77,17 @@ var pluginUpdateCmd = &cobra.Command{
 	Short: "Update installed plugin(s)",
 	Long: `Update all installed plugins or a specific plugin.
 
+By default, only updates plugins with version changes.
+Use --force to reinstall all plugins regardless of version.
+
 Example:
-  codex-market plugin update                     # Update all plugins
+  codex-market plugin update                     # Update plugins with changes
+  codex-market plugin update --force             # Force reinstall all plugins
   codex-market plugin update my-plugin@my-marketplace  # Update specific`,
 	RunE: runPluginUpdate,
 }
+
+var pluginUpdateForce bool
 
 var pluginListCmd = &cobra.Command{
 	Use:   "list",
@@ -92,27 +100,32 @@ Example:
 }
 
 var pluginSearchCmd = &cobra.Command{
-	Use:   "search <keyword>",
+	Use:   "search [keyword]",
 	Short: "Search for plugins across all marketplaces",
 	Long: `Search for plugins using fuzzy matching across all registered marketplaces.
+
+Without arguments, opens an interactive fuzzy finder (TUI mode).
+With a keyword, performs a text-based search.
 
 The search looks through plugin names, descriptions, tags, and keywords.
 
 Example:
-  codex-market plugin search formatter
-  codex-market plugin search code-review`,
-	Args: cobra.ExactArgs(1),
+  codex-market plugin search              # Interactive TUI mode
+  codex-market plugin search formatter    # Text search mode`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runPluginSearch,
 }
 
 var (
 	pluginInstallScope   string
 	pluginUninstallScope string
+	pluginQuietMode      bool // Suppress output during batch operations
 )
 
 func init() {
 	pluginInstallCmd.Flags().StringVarP(&pluginInstallScope, "scope", "s", "global", "install scope (global or project)")
 	pluginUninstallCmd.Flags().StringVarP(&pluginUninstallScope, "scope", "s", "global", "uninstall scope (global, project, or all)")
+	pluginUpdateCmd.Flags().BoolVarP(&pluginUpdateForce, "force", "f", false, "force reinstall regardless of version")
 
 	pluginCmd.AddCommand(pluginInstallCmd)
 	pluginCmd.AddCommand(pluginUninstallCmd)
@@ -123,6 +136,9 @@ func init() {
 }
 
 func runPluginInstall(cmd *cobra.Command, args []string) error {
+	if cmd != nil {
+		cmd.SilenceUsage = true
+	}
 	identifier := args[0]
 
 	// Parse plugin identifier
@@ -177,7 +193,26 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	pluginID := fmt.Sprintf("%s@%s", pluginName, marketplaceName)
-	fmt.Printf("Installing %s...\n", pluginID)
+
+	// Check if already installed in the same scope
+	var projectPath string
+	if pluginInstallScope == "project" {
+		projectPath, _ = os.Getwd()
+	}
+	existingEntries, err := plugin.GetInstalled().GetByScope(pluginID, pluginInstallScope, projectPath)
+	if err != nil {
+		return fmt.Errorf("failed to check installed plugins: %w", err)
+	}
+	if len(existingEntries) > 0 {
+		return fmt.Errorf(i18n.T("AlreadyInstalled", map[string]any{
+			"Plugin": pluginID,
+			"Scope":  pluginInstallScope,
+		}))
+	}
+
+	if !pluginQuietMode {
+		fmt.Printf("Installing %s...\n", pluginID)
+	}
 
 	// Determine Codex skills directory based on scope
 	var codexSkillsDir string
@@ -193,50 +228,128 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 
 	// Find and copy skills from the plugin's skills folder
 	skillsSourceDir := filepath.Join(sourcePath, "skills")
-	if _, err := os.Stat(skillsSourceDir); os.IsNotExist(err) {
-		return fmt.Errorf("plugin has no skills folder: %s", skillsSourceDir)
-	}
-
-	// Read skills directories
-	skillEntries, err := os.ReadDir(skillsSourceDir)
-	if err != nil {
-		return fmt.Errorf("failed to read skills folder: %w", err)
-	}
-
 	var installedSkills []plugin.SkillEntry
-	for _, entry := range skillEntries {
-		if !entry.IsDir() {
-			continue
+
+	if _, err := os.Stat(skillsSourceDir); err == nil {
+		// Read skills directories
+		skillEntries, err := os.ReadDir(skillsSourceDir)
+		if err != nil {
+			return fmt.Errorf("failed to read skills folder: %w", err)
 		}
 
-		skillName := entry.Name()
-		skillSourcePath := filepath.Join(skillsSourceDir, skillName)
+		for _, entry := range skillEntries {
+			if !entry.IsDir() {
+				continue
+			}
 
-		// Check if SKILL.md exists
-		skillMdPath := filepath.Join(skillSourcePath, "SKILL.md")
-		if _, err := os.Stat(skillMdPath); os.IsNotExist(err) {
-			continue // Skip directories without SKILL.md
+			skillName := entry.Name()
+			skillSourcePath := filepath.Join(skillsSourceDir, skillName)
+
+			// Check if SKILL.md exists
+			skillMdPath := filepath.Join(skillSourcePath, "SKILL.md")
+			if _, err := os.Stat(skillMdPath); os.IsNotExist(err) {
+				continue // Skip directories without SKILL.md
+			}
+
+			// Copy skill to Codex skills directory
+			skillDestPath, actualSkillName, err := plugin.ResolveUniqueSkillPath(codexSkillsDir, skillName)
+			if err != nil {
+				return fmt.Errorf("failed to resolve skill path: %w", err)
+			}
+
+			if actualSkillName != skillName && !pluginQuietMode {
+				fmt.Println(i18n.T("SkillNameConflict", map[string]any{
+					"Original": skillName,
+					"Resolved": actualSkillName,
+				}))
+			}
+
+			if err := config.EnsureDir(skillDestPath); err != nil {
+				return fmt.Errorf("failed to create skill directory: %w", err)
+			}
+
+			if err := plugin.CopyDir(skillSourcePath, skillDestPath); err != nil {
+				os.RemoveAll(skillDestPath)
+				return fmt.Errorf("failed to copy skill files: %w", err)
+			}
+
+			installedSkills = append(installedSkills, plugin.SkillEntry{
+				Name: actualSkillName,
+				Path: skillDestPath,
+			})
 		}
-
-		// Copy skill to Codex skills directory
-		skillDestPath := filepath.Join(codexSkillsDir, skillName)
-		if err := config.EnsureDir(skillDestPath); err != nil {
-			return fmt.Errorf("failed to create skill directory: %w", err)
-		}
-
-		if err := plugin.CopyDir(skillSourcePath, skillDestPath); err != nil {
-			os.RemoveAll(skillDestPath)
-			return fmt.Errorf("failed to copy skill files: %w", err)
-		}
-
-		installedSkills = append(installedSkills, plugin.SkillEntry{
-			Name: skillName,
-			Path: skillDestPath,
-		})
 	}
 
-	if len(installedSkills) == 0 {
-		return fmt.Errorf("no valid skills found in plugin (SKILL.md required)")
+	// Find and copy commands from the plugin's commands folder
+	commandsSourceDir := filepath.Join(sourcePath, "commands")
+	var installedCommands []plugin.CommandEntry
+	var codexPromptsDir string
+
+	if _, err := os.Stat(commandsSourceDir); err == nil {
+		// Determine Codex prompts directory based on scope
+		if pluginInstallScope == "project" {
+			codexPromptsDir = config.ProjectCodexPromptsDir()
+			if codexPromptsDir == "" {
+				cwd, _ := os.Getwd()
+				codexPromptsDir = filepath.Join(cwd, ".codex", "prompts")
+			}
+		} else {
+			codexPromptsDir = config.CodexPromptsDir()
+		}
+
+		// Ensure prompts directory exists
+		if err := config.EnsureDir(codexPromptsDir); err != nil {
+			return fmt.Errorf("failed to create prompts directory: %w", err)
+		}
+
+		// Read command files
+		commandEntries, err := os.ReadDir(commandsSourceDir)
+		if err != nil {
+			return fmt.Errorf("failed to read commands folder: %w", err)
+		}
+
+		for _, entry := range commandEntries {
+			if entry.IsDir() {
+				continue // Skip directories
+			}
+
+			fileName := entry.Name()
+			if !strings.HasSuffix(fileName, ".md") {
+				continue // Skip non-markdown files
+			}
+
+			commandSourcePath := filepath.Join(commandsSourceDir, fileName)
+
+			// Resolve unique path (handle conflicts)
+			commandDestPath, actualFileName, err := plugin.ResolveUniquePromptPath(codexPromptsDir, fileName)
+			if err != nil {
+				return fmt.Errorf("failed to resolve prompt path: %w", err)
+			}
+
+			if actualFileName != fileName && !pluginQuietMode {
+				fmt.Println(i18n.T("PromptNameConflict", map[string]any{
+					"Original": fileName,
+					"Resolved": actualFileName,
+				}))
+			}
+
+			// Copy command file
+			if err := plugin.CopyFile(commandSourcePath, commandDestPath); err != nil {
+				return fmt.Errorf("failed to copy command file %s: %w", fileName, err)
+			}
+
+			// Command name without .md extension
+			commandName := strings.TrimSuffix(actualFileName, ".md")
+			installedCommands = append(installedCommands, plugin.CommandEntry{
+				Name: commandName,
+				Path: commandDestPath,
+			})
+		}
+	}
+
+	// Validate: at least one skill or command must be installed
+	if len(installedSkills) == 0 && len(installedCommands) == 0 {
+		return fmt.Errorf("no valid skills or commands found in plugin")
 	}
 
 	// Also keep a cache copy for tracking
@@ -261,7 +374,8 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 			URL:         mp.Source.URL,
 			CachePath:   cachePath,
 		},
-		Skills: installedSkills,
+		Skills:   installedSkills,
+		Commands: installedCommands,
 	}
 
 	if pluginInstallScope == "project" {
@@ -274,17 +388,31 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Success message
-	fmt.Println(i18n.T("InstallSuccess", map[string]any{
-		"Plugin":      pluginName,
-		"Marketplace": marketplaceName,
-		"Version":     version,
-	}))
-	skillNames := make([]string, len(installedSkills))
-	for i, s := range installedSkills {
-		skillNames[i] = s.Name
+	if !pluginQuietMode {
+		fmt.Println(i18n.T("InstallSuccess", map[string]any{
+			"Plugin":      pluginName,
+			"Marketplace": marketplaceName,
+			"Version":     version,
+		}))
+
+		if len(installedSkills) > 0 {
+			skillNames := make([]string, len(installedSkills))
+			for i, s := range installedSkills {
+				skillNames[i] = s.Name
+			}
+			fmt.Printf("  Skills: %s\n", strings.Join(skillNames, ", "))
+			fmt.Printf("  Skills Location: %s\n", codexSkillsDir)
+		}
+
+		if len(installedCommands) > 0 {
+			commandNames := make([]string, len(installedCommands))
+			for i, c := range installedCommands {
+				commandNames[i] = "/" + c.Name
+			}
+			fmt.Printf("  Commands: %s\n", strings.Join(commandNames, ", "))
+			fmt.Printf("  Commands Location: %s\n", codexPromptsDir)
+		}
 	}
-	fmt.Printf("  Skills: %s\n", strings.Join(skillNames, ", "))
-	fmt.Printf("  Location: %s\n", codexSkillsDir)
 
 	return nil
 }
@@ -322,32 +450,51 @@ func runPluginUninstall(cmd *cobra.Command, args []string) error {
 
 	// Remove skill directories and cache for removed entries
 	for _, entry := range removed {
-		scopeInfo := entry.Scope
-		if entry.Scope == "project" {
-			scopeInfo = fmt.Sprintf("project:%s", entry.ProjectPath)
+		if !pluginQuietMode {
+			scopeInfo := entry.Scope
+			if entry.Scope == "project" {
+				scopeInfo = fmt.Sprintf("project:%s", entry.ProjectPath)
+			}
+			fmt.Printf("Removing from %s...\n", scopeInfo)
 		}
-		fmt.Printf("Removing from %s...\n", scopeInfo)
 
 		// Remove each skill folder
 		for _, skill := range entry.Skills {
 			if err := os.RemoveAll(skill.Path); err != nil {
-				fmt.Printf("  Warning: failed to remove skill %s at %s: %v\n", skill.Name, skill.Path, err)
-			} else {
+				if !pluginQuietMode {
+					fmt.Printf("  Warning: failed to remove skill %s at %s: %v\n", skill.Name, skill.Path, err)
+				}
+			} else if !pluginQuietMode {
 				fmt.Printf("  Removed skill: %s (%s)\n", skill.Name, skill.Path)
+			}
+		}
+
+		// Remove each command file
+		for _, command := range entry.Commands {
+			if err := os.Remove(command.Path); err != nil {
+				if !os.IsNotExist(err) && !pluginQuietMode {
+					fmt.Printf("  Warning: failed to remove command %s at %s: %v\n", command.Name, command.Path, err)
+				}
+			} else if !pluginQuietMode {
+				fmt.Printf("  Removed command: /%s (%s)\n", command.Name, command.Path)
 			}
 		}
 
 		// Remove cache directory
 		if entry.Source.CachePath != "" {
 			if err := os.RemoveAll(entry.Source.CachePath); err != nil {
-				fmt.Printf("  Warning: failed to remove cache %s: %v\n", entry.Source.CachePath, err)
+				if !pluginQuietMode {
+					fmt.Printf("  Warning: failed to remove cache %s: %v\n", entry.Source.CachePath, err)
+				}
 			}
 		}
 	}
 
 	// Success message
-	fmt.Printf("\n%s\n", i18n.T("RemoveSuccess", map[string]any{"Plugin": pluginID}))
-	fmt.Printf("Removed %d installation(s)\n", len(removed))
+	if !pluginQuietMode {
+		fmt.Printf("\n%s\n", i18n.T("RemoveSuccess", map[string]any{"Plugin": pluginID}))
+		fmt.Printf("Removed %d installation(s)\n", len(removed))
+	}
 
 	return nil
 }
@@ -376,14 +523,30 @@ func runPluginUsage(cmd *cobra.Command, args []string) error {
 		fmt.Printf("    Version: %s\n", entry.Version)
 		fmt.Printf("    Source: %s\n", entry.Source.URL)
 		fmt.Printf("    Installed: %s\n", entry.InstalledAt)
-		fmt.Printf("    Skills:\n")
-		for _, skill := range entry.Skills {
-			fmt.Printf("      - %s: %s\n", skill.Name, skill.Path)
+		if len(entry.Skills) > 0 {
+			fmt.Printf("    Skills:\n")
+			for _, skill := range entry.Skills {
+				fmt.Printf("      - %s: %s\n", skill.Name, skill.Path)
+			}
+		}
+		if len(entry.Commands) > 0 {
+			fmt.Printf("    Commands:\n")
+			for _, command := range entry.Commands {
+				fmt.Printf("      - /%s: %s\n", command.Name, command.Path)
+			}
 		}
 	}
 
 	fmt.Printf("\nTotal: %d installation(s)\n", len(entries))
 	return nil
+}
+
+// pluginUpdateItem holds info about a plugin to update
+type pluginUpdateItem struct {
+	pluginID   string
+	entry      plugin.InstalledPluginEntry
+	newVersion string
+	isForce    bool
 }
 
 func runPluginUpdate(cmd *cobra.Command, args []string) error {
@@ -393,6 +556,9 @@ func runPluginUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	gitClient := git.NewClient()
+	registry := marketplace.GetRegistry()
+
 	if len(args) == 0 {
 		// Update all installed plugins
 		if len(installedPlugins.Plugins) == 0 {
@@ -400,26 +566,72 @@ func runPluginUpdate(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		gitClient := git.NewClient()
-		registry := marketplace.GetRegistry()
-
 		// First, update all marketplaces
 		fmt.Println("Updating marketplaces...")
 		if err := updateAllMarketplaces(gitClient, registry); err != nil {
 			return err
 		}
 
-		// Then reinstall all plugins
-		fmt.Println("\nReinstalling plugins...")
-		for pluginID := range installedPlugins.Plugins {
-			fmt.Printf("Reinstalling %s...\n", pluginID)
-			if err := runPluginInstall(nil, []string{pluginID}); err != nil {
-				fmt.Printf("  Error: %v\n", err)
-				continue
+		// Phase 1: Collect plugins that need updates
+		fmt.Println("\nChecking for plugin updates...")
+		var toUpdate []pluginUpdateItem
+		var warnings []string
+
+		for pluginID, entries := range installedPlugins.Plugins {
+			for _, entry := range entries {
+				needsUpdate, newVersion, err := checkPluginNeedsUpdate(pluginID, entry, registry, gitClient)
+				if err != nil {
+					warnings = append(warnings, fmt.Sprintf("  ⚠ %s: %v", pluginID, err))
+					continue
+				}
+
+				if !needsUpdate && !pluginUpdateForce {
+					continue
+				}
+
+				toUpdate = append(toUpdate, pluginUpdateItem{
+					pluginID:   pluginID,
+					entry:      entry,
+					newVersion: newVersion,
+					isForce:    pluginUpdateForce,
+				})
 			}
 		}
 
-		fmt.Println(i18n.T("UpdateAllSuccess", nil))
+		// Show warnings
+		for _, w := range warnings {
+			fmt.Println(w)
+		}
+
+		if len(toUpdate) == 0 {
+			fmt.Println("\n" + i18n.T("update.noUpdates", nil))
+			return nil
+		}
+
+		// Phase 2: Show what will be updated
+		fmt.Println()
+		for _, item := range toUpdate {
+			if item.isForce {
+				fmt.Printf("  • %s (force reinstall)\n", item.pluginID)
+			} else {
+				fmt.Printf("  • %s: %s → %s\n", item.pluginID, item.entry.Version, item.newVersion)
+			}
+		}
+		fmt.Println()
+
+		// Phase 3: Apply updates with spinner
+		updatedCount := 0
+		for _, item := range toUpdate {
+			spinner := autoupdate.NewSpinner(item.pluginID)
+			spinner.Start()
+			err := reinstallPlugin(item.pluginID, item.entry)
+			spinner.Stop(err == nil)
+			if err == nil {
+				updatedCount++
+			}
+		}
+
+		fmt.Printf("\n%d plugin(s) updated\n", updatedCount)
 		return nil
 	}
 
@@ -430,17 +642,125 @@ func runPluginUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	gitClient := git.NewClient()
-	registry := marketplace.GetRegistry()
+	// Get installed entry
+	entries, err := installed.Get(pluginID)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf(i18n.T("NotInstalled", map[string]any{"Plugin": pluginID}))
+	}
 
 	// First update the marketplace
+	fmt.Printf("Updating marketplace %s...\n", marketplaceName)
 	if err := updateMarketplace(gitClient, registry, marketplaceName); err != nil {
 		return err
 	}
 
-	// Then reinstall the plugin
-	fmt.Printf("Reinstalling %s@%s...\n", pluginName, marketplaceName)
-	return runPluginInstall(nil, []string{pluginID})
+	// Check if update needed
+	for _, entry := range entries {
+		needsUpdate, newVersion, err := checkPluginNeedsUpdate(pluginID, entry, registry, gitClient)
+		if err != nil {
+			return err
+		}
+
+		if !needsUpdate && !pluginUpdateForce {
+			fmt.Printf("%s is already up to date (v%s)\n", pluginID, entry.Version)
+			continue
+		}
+
+		fmt.Println()
+		if pluginUpdateForce {
+			fmt.Printf("  • %s (force reinstall)\n", pluginID)
+		} else {
+			fmt.Printf("  • %s@%s: %s → %s\n", pluginName, marketplaceName, entry.Version, newVersion)
+		}
+		fmt.Println()
+
+		spinner := autoupdate.NewSpinner(pluginID)
+		spinner.Start()
+		err = reinstallPlugin(pluginID, entry)
+		spinner.Stop(err == nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkPluginNeedsUpdate checks if a plugin has a newer version available
+func checkPluginNeedsUpdate(pluginID string, entry plugin.InstalledPluginEntry, registry *marketplace.Registry, gitClient git.Client) (bool, string, error) {
+	pluginName, marketplaceName, err := parsePluginID(pluginID)
+	if err != nil {
+		return false, "", err
+	}
+
+	// Get marketplace
+	mp, err := registry.Get(marketplaceName)
+	if err != nil || mp == nil {
+		return false, "", fmt.Errorf("marketplace not found: %s", marketplaceName)
+	}
+
+	// Load manifest
+	manifest, err := marketplace.LoadManifest(mp.InstallLocation)
+	if err != nil {
+		return false, "", err
+	}
+
+	// Find plugin in manifest
+	pluginEntry := manifest.FindPlugin(pluginName)
+	if pluginEntry == nil {
+		return false, "", fmt.Errorf(i18n.T("PluginNotFound", map[string]any{
+			"Plugin":      pluginName,
+			"Marketplace": marketplaceName,
+		}))
+	}
+
+	// Get new version
+	newVersion := pluginEntry.Version
+	if newVersion == "" {
+		commit, err := gitClient.GetCurrentCommit(mp.InstallLocation)
+		if err == nil && len(commit) > 12 {
+			newVersion = commit[:12]
+		} else {
+			newVersion = "latest"
+		}
+	}
+
+	// Compare versions
+	return entry.Version != newVersion, newVersion, nil
+}
+
+// reinstallPlugin uninstalls and reinstalls a plugin (quiet mode)
+func reinstallPlugin(pluginID string, entry plugin.InstalledPluginEntry) error {
+	// Save scope info for reinstall
+	originalScope := entry.Scope
+	originalProjectPath := entry.ProjectPath
+
+	// Enable quiet mode for batch operation
+	pluginQuietMode = true
+	defer func() { pluginQuietMode = false }()
+
+	// Uninstall
+	pluginUninstallScope = entry.Scope
+	if err := runPluginUninstall(nil, []string{pluginID}); err != nil {
+		return fmt.Errorf("uninstall failed: %w", err)
+	}
+
+	// Reinstall with same scope
+	pluginInstallScope = originalScope
+	if originalScope == "project" {
+		// Change to project directory for project scope
+		if originalProjectPath != "" {
+			oldDir, _ := os.Getwd()
+			os.Chdir(originalProjectPath)
+			defer os.Chdir(oldDir)
+		}
+	}
+
+	if err := runPluginInstall(nil, []string{pluginID}); err != nil {
+		return fmt.Errorf("reinstall failed: %w", err)
+	}
+
+	return nil
 }
 
 func runPluginList(cmd *cobra.Command, args []string) error {
@@ -462,9 +782,17 @@ func runPluginList(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s (v%s)\n", id, entry.Version)
 			fmt.Printf("    Scope: %s\n", entry.Scope)
 			fmt.Printf("    Source: %s\n", entry.Source.URL)
-			fmt.Printf("    Skills:\n")
-			for _, skill := range entry.Skills {
-				fmt.Printf("      - %s: %s\n", skill.Name, skill.Path)
+			if len(entry.Skills) > 0 {
+				fmt.Printf("    Skills:\n")
+				for _, skill := range entry.Skills {
+					fmt.Printf("      - %s: %s\n", skill.Name, skill.Path)
+				}
+			}
+			if len(entry.Commands) > 0 {
+				fmt.Printf("    Commands:\n")
+				for _, command := range entry.Commands {
+					fmt.Printf("      - /%s: %s\n", command.Name, command.Path)
+				}
 			}
 			fmt.Printf("    Installed: %s\n", entry.InstalledAt)
 			fmt.Println()
@@ -475,8 +803,6 @@ func runPluginList(cmd *cobra.Command, args []string) error {
 }
 
 func runPluginSearch(cmd *cobra.Command, args []string) error {
-	keyword := args[0]
-
 	registry := marketplace.GetRegistry()
 	knownMarketplaces, err := registry.List()
 	if err != nil {
@@ -498,7 +824,64 @@ func runPluginSearch(cmd *cobra.Command, args []string) error {
 		manifests[name] = manifest
 	}
 
-	// Perform fuzzy search
+	// Branch: TUI mode (no args) or text mode (with keyword)
+	if len(args) == 0 {
+		return runInteractiveSearch(manifests)
+	}
+
+	return runTextSearch(manifests, args[0])
+}
+
+// runInteractiveSearch runs the TUI fuzzy finder with install/uninstall support
+func runInteractiveSearch(manifests map[string]*marketplace.MarketplaceManifest) error {
+	result, err := tui.RunPluginFinder(manifests)
+	if err != nil {
+		return err
+	}
+
+	if result.Cancelled {
+		fmt.Println(i18n.T("SearchCancelled", nil))
+		return nil
+	}
+
+	// Check if there are any changes
+	if len(result.ToInstall) == 0 && len(result.ToUninstall) == 0 {
+		fmt.Println(i18n.T("NoChanges", nil))
+		return nil
+	}
+
+	// Process installs
+	if len(result.ToInstall) > 0 {
+		fmt.Println()
+		fmt.Println(i18n.T("InstallingPlugins", map[string]any{"Count": len(result.ToInstall)}, len(result.ToInstall)))
+		for _, item := range result.ToInstall {
+			pluginID := fmt.Sprintf("%s@%s", item.Plugin.Name, item.Marketplace)
+			if err := runPluginInstall(nil, []string{pluginID}); err != nil {
+				fmt.Printf("  %s: %v\n", i18n.T("InstallFailed", map[string]any{"Plugin": pluginID}), err)
+			}
+		}
+	}
+
+	// Process uninstalls
+	if len(result.ToUninstall) > 0 {
+		fmt.Println()
+		fmt.Println(i18n.T("UninstallingPlugins", map[string]any{"Count": len(result.ToUninstall)}, len(result.ToUninstall)))
+		for _, item := range result.ToUninstall {
+			pluginID := fmt.Sprintf("%s@%s", item.Plugin.Name, item.Marketplace)
+			// Use global scope for uninstall
+			pluginUninstallScope = "global"
+			if err := runPluginUninstall(nil, []string{pluginID}); err != nil {
+				fmt.Printf("  %s: %v\n", i18n.T("UninstallFailed", map[string]any{"Plugin": pluginID}), err)
+			}
+		}
+	}
+
+	fmt.Println()
+	return nil
+}
+
+// runTextSearch performs the existing text-based search
+func runTextSearch(manifests map[string]*marketplace.MarketplaceManifest, keyword string) error {
 	results := search.FuzzySearch(manifests, keyword)
 
 	if len(results) == 0 {
