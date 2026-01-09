@@ -63,6 +63,12 @@ func CodexSkillsDir() string {
 	return filepath.Join(CodexDir(), "skills")
 }
 
+// CodexPromptsDir returns the Codex global prompts directory path
+// ~/.codex/prompts/ (Codex's custom commands location)
+func CodexPromptsDir() string {
+	return filepath.Join(CodexDir(), "prompts")
+}
+
 // ProjectCodexSkillsDir returns the project-level Codex skills directory path
 // .codex/skills/
 func ProjectCodexSkillsDir() string {
@@ -71,6 +77,16 @@ func ProjectCodexSkillsDir() string {
 		return ""
 	}
 	return filepath.Join(cwd, ".codex", "skills")
+}
+
+// ProjectCodexPromptsDir returns the project-level Codex prompts directory path
+// .codex/prompts/
+func ProjectCodexPromptsDir() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(cwd, ".codex", "prompts")
 }
 
 // GlobalSettingsPath returns the global Claude settings.json file path
