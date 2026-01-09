@@ -110,6 +110,9 @@
   "SkillNameConflict": {
     "other": "  주의: '{{.Original}}' 스킬이 이미 존재하여 '{{.Resolved}}'로 설치합니다"
   },
+  "PromptNameConflict": {
+    "other": "  주의: '{{.Original}}' 커맨드가 이미 존재하여 '{{.Resolved}}'로 설치합니다"
+  },
   "AlreadyInstalled": {
     "other": "'{{.Plugin}}'이(가) 이미 {{.Scope}} scope에 설치되어 있습니다. 업데이트하려면 'codex-market plugin update'를 사용하세요."
   }

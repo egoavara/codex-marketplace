@@ -116,6 +116,9 @@
   "SkillNameConflict": {
     "other": "  Note: Skill '{{.Original}}' already exists, installing as '{{.Resolved}}'"
   },
+  "PromptNameConflict": {
+    "other": "  Note: Command '{{.Original}}' already exists, installing as '{{.Resolved}}'"
+  },
   "AlreadyInstalled": {
     "other": "'{{.Plugin}}' is already installed in {{.Scope}} scope. Use 'codex-market plugin update' to update."
   }
