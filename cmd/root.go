@@ -51,9 +51,9 @@ var uninstallAliasCmd = &cobra.Command{
 }
 
 var searchAliasCmd = &cobra.Command{
-	Use:    "search <keyword>",
+	Use:    "search [keyword]",
 	Short:  "Search for plugins (alias for 'plugin search')",
-	Args:   cobra.ExactArgs(1),
+	Args:   cobra.MaximumNArgs(1),
 	Hidden: false,
 	RunE:   runPluginSearch,
 }

@@ -66,5 +66,51 @@
   },
   "AvailablePluginsHeader": {
     "other": "Available Plugins:"
+  },
+  "TUIHeader": {
+    "other": "{{.Count}} plugins | [*] installed | [+] to install | [-] to uninstall"
+  },
+  "TUIPreviewEmpty": {
+    "other": "Select a plugin to see details"
+  },
+  "SearchCancelled": {
+    "other": "Search cancelled"
+  },
+  "NoPluginsAvailable": {
+    "other": "No plugins available in registered marketplaces"
+  },
+  "NoChanges": {
+    "other": "No changes to apply"
+  },
+  "ConfirmTitle": {
+    "other": "Confirm Changes"
+  },
+  "ToInstall": {
+    "one": "To install ({{.Count}} plugin):",
+    "other": "To install ({{.Count}} plugins):"
+  },
+  "ToUninstall": {
+    "one": "To uninstall ({{.Count}} plugin):",
+    "other": "To uninstall ({{.Count}} plugins):"
+  },
+  "Confirm": {
+    "other": "Confirm"
+  },
+  "Cancel": {
+    "other": "Cancel"
+  },
+  "InstallingPlugins": {
+    "one": "Installing {{.Count}} plugin...",
+    "other": "Installing {{.Count}} plugins..."
+  },
+  "UninstallingPlugins": {
+    "one": "Uninstalling {{.Count}} plugin...",
+    "other": "Uninstalling {{.Count}} plugins..."
+  },
+  "InstallFailed": {
+    "other": "Failed to install '{{.Plugin}}'"
+  },
+  "UninstallFailed": {
+    "other": "Failed to uninstall '{{.Plugin}}'"
   }
 }

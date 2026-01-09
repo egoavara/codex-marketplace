@@ -64,5 +64,47 @@
   },
   "AvailablePluginsHeader": {
     "other": "사용 가능한 플러그인:"
+  },
+  "TUIHeader": {
+    "other": "{{.Count}}개 플러그인 | [*] 설치됨 | [+] 설치 예정 | [-] 삭제 예정"
+  },
+  "TUIPreviewEmpty": {
+    "other": "상세 정보를 보려면 플러그인을 선택하세요"
+  },
+  "SearchCancelled": {
+    "other": "검색이 취소되었습니다"
+  },
+  "NoPluginsAvailable": {
+    "other": "등록된 마켓플레이스에 사용 가능한 플러그인이 없습니다"
+  },
+  "NoChanges": {
+    "other": "적용할 변경사항이 없습니다"
+  },
+  "ConfirmTitle": {
+    "other": "변경사항 확인"
+  },
+  "ToInstall": {
+    "other": "설치 예정 ({{.Count}}개):"
+  },
+  "ToUninstall": {
+    "other": "삭제 예정 ({{.Count}}개):"
+  },
+  "Confirm": {
+    "other": "확인"
+  },
+  "Cancel": {
+    "other": "취소"
+  },
+  "InstallingPlugins": {
+    "other": "{{.Count}}개 플러그인 설치 중..."
+  },
+  "UninstallingPlugins": {
+    "other": "{{.Count}}개 플러그인 삭제 중..."
+  },
+  "InstallFailed": {
+    "other": "'{{.Plugin}}' 설치 실패"
+  },
+  "UninstallFailed": {
+    "other": "'{{.Plugin}}' 삭제 실패"
   }
 }

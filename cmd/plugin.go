@@ -13,6 +13,7 @@ import (
 	"github.com/egoavara/codex-market/internal/marketplace"
 	"github.com/egoavara/codex-market/internal/plugin"
 	"github.com/egoavara/codex-market/internal/search"
+	"github.com/egoavara/codex-market/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -92,16 +93,19 @@ Example:
 }
 
 var pluginSearchCmd = &cobra.Command{
-	Use:   "search <keyword>",
+	Use:   "search [keyword]",
 	Short: "Search for plugins across all marketplaces",
 	Long: `Search for plugins using fuzzy matching across all registered marketplaces.
+
+Without arguments, opens an interactive fuzzy finder (TUI mode).
+With a keyword, performs a text-based search.
 
 The search looks through plugin names, descriptions, tags, and keywords.
 
 Example:
-  codex-market plugin search formatter
-  codex-market plugin search code-review`,
-	Args: cobra.ExactArgs(1),
+  codex-market plugin search              # Interactive TUI mode
+  codex-market plugin search formatter    # Text search mode`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runPluginSearch,
 }
 
@@ -475,8 +479,6 @@ func runPluginList(cmd *cobra.Command, args []string) error {
 }
 
 func runPluginSearch(cmd *cobra.Command, args []string) error {
-	keyword := args[0]
-
 	registry := marketplace.GetRegistry()
 	knownMarketplaces, err := registry.List()
 	if err != nil {
@@ -498,7 +500,64 @@ func runPluginSearch(cmd *cobra.Command, args []string) error {
 		manifests[name] = manifest
 	}
 
-	// Perform fuzzy search
+	// Branch: TUI mode (no args) or text mode (with keyword)
+	if len(args) == 0 {
+		return runInteractiveSearch(manifests)
+	}
+
+	return runTextSearch(manifests, args[0])
+}
+
+// runInteractiveSearch runs the TUI fuzzy finder with install/uninstall support
+func runInteractiveSearch(manifests map[string]*marketplace.MarketplaceManifest) error {
+	result, err := tui.RunPluginFinder(manifests)
+	if err != nil {
+		return err
+	}
+
+	if result.Cancelled {
+		fmt.Println(i18n.T("SearchCancelled", nil))
+		return nil
+	}
+
+	// Check if there are any changes
+	if len(result.ToInstall) == 0 && len(result.ToUninstall) == 0 {
+		fmt.Println(i18n.T("NoChanges", nil))
+		return nil
+	}
+
+	// Process installs
+	if len(result.ToInstall) > 0 {
+		fmt.Println()
+		fmt.Println(i18n.T("InstallingPlugins", map[string]any{"Count": len(result.ToInstall)}, len(result.ToInstall)))
+		for _, item := range result.ToInstall {
+			pluginID := fmt.Sprintf("%s@%s", item.Plugin.Name, item.Marketplace)
+			if err := runPluginInstall(nil, []string{pluginID}); err != nil {
+				fmt.Printf("  %s: %v\n", i18n.T("InstallFailed", map[string]any{"Plugin": pluginID}), err)
+			}
+		}
+	}
+
+	// Process uninstalls
+	if len(result.ToUninstall) > 0 {
+		fmt.Println()
+		fmt.Println(i18n.T("UninstallingPlugins", map[string]any{"Count": len(result.ToUninstall)}, len(result.ToUninstall)))
+		for _, item := range result.ToUninstall {
+			pluginID := fmt.Sprintf("%s@%s", item.Plugin.Name, item.Marketplace)
+			// Use global scope for uninstall
+			pluginUninstallScope = "global"
+			if err := runPluginUninstall(nil, []string{pluginID}); err != nil {
+				fmt.Printf("  %s: %v\n", i18n.T("UninstallFailed", map[string]any{"Plugin": pluginID}), err)
+			}
+		}
+	}
+
+	fmt.Println()
+	return nil
+}
+
+// runTextSearch performs the existing text-based search
+func runTextSearch(manifests map[string]*marketplace.MarketplaceManifest, keyword string) error {
 	results := search.FuzzySearch(manifests, keyword)
 
 	if len(results) == 0 {
