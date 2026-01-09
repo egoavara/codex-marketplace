@@ -112,5 +112,11 @@
   },
   "UninstallFailed": {
     "other": "Failed to uninstall '{{.Plugin}}'"
+  },
+  "SkillNameConflict": {
+    "other": "  Note: Skill '{{.Original}}' already exists, installing as '{{.Resolved}}'"
+  },
+  "AlreadyInstalled": {
+    "other": "'{{.Plugin}}' is already installed in {{.Scope}} scope. Use 'codex-market plugin update' to update."
   }
 }

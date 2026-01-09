@@ -11,8 +11,9 @@ var (
 	verbose bool
 
 	rootCmd = &cobra.Command{
-		Use:   "codex-market",
-		Short: "CLI tool for managing Claude Code plugins",
+		Use:           "codex-market",
+		Short:         "CLI tool for managing Claude Code plugins",
+		SilenceErrors: true,
 		Long: `codex-market is a third-party CLI tool for managing
 Claude Code plugins from various marketplaces.
 

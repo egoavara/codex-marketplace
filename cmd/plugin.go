@@ -127,6 +127,7 @@ func init() {
 }
 
 func runPluginInstall(cmd *cobra.Command, args []string) error {
+	cmd.SilenceUsage = true
 	identifier := args[0]
 
 	// Parse plugin identifier
@@ -181,6 +182,23 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	pluginID := fmt.Sprintf("%s@%s", pluginName, marketplaceName)
+
+	// Check if already installed in the same scope
+	var projectPath string
+	if pluginInstallScope == "project" {
+		projectPath, _ = os.Getwd()
+	}
+	existingEntries, err := plugin.GetInstalled().GetByScope(pluginID, pluginInstallScope, projectPath)
+	if err != nil {
+		return fmt.Errorf("failed to check installed plugins: %w", err)
+	}
+	if len(existingEntries) > 0 {
+		return fmt.Errorf(i18n.T("AlreadyInstalled", map[string]any{
+			"Plugin": pluginID,
+			"Scope":  pluginInstallScope,
+		}))
+	}
+
 	fmt.Printf("Installing %s...\n", pluginID)
 
 	// Determine Codex skills directory based on scope
@@ -223,7 +241,18 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		}
 
 		// Copy skill to Codex skills directory
-		skillDestPath := filepath.Join(codexSkillsDir, skillName)
+		skillDestPath, actualSkillName, err := plugin.ResolveUniqueSkillPath(codexSkillsDir, skillName)
+		if err != nil {
+			return fmt.Errorf("failed to resolve skill path: %w", err)
+		}
+
+		if actualSkillName != skillName {
+			fmt.Println(i18n.T("SkillNameConflict", map[string]any{
+				"Original": skillName,
+				"Resolved": actualSkillName,
+			}))
+		}
+
 		if err := config.EnsureDir(skillDestPath); err != nil {
 			return fmt.Errorf("failed to create skill directory: %w", err)
 		}
@@ -234,7 +263,7 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		}
 
 		installedSkills = append(installedSkills, plugin.SkillEntry{
-			Name: skillName,
+			Name: actualSkillName,
 			Path: skillDestPath,
 		})
 	}
