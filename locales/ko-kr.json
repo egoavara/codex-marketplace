@@ -112,5 +112,107 @@
   },
   "AlreadyInstalled": {
     "other": "'{{.Plugin}}'이(가) 이미 {{.Scope}} scope에 설치되어 있습니다. 업데이트하려면 'codex-market plugin update'를 사용하세요."
+  },
+  "update.checking": {
+    "other": "업데이트 확인 중..."
+  },
+  "update.available": {
+    "other": "업데이트가 있습니다:"
+  },
+  "update.typeMarketplace": {
+    "other": "마켓플레이스"
+  },
+  "update.typePlugin": {
+    "other": "플러그인"
+  },
+  "update.prompt": {
+    "other": "지금 업데이트하시겠습니까?"
+  },
+  "update.updating": {
+    "other": "업데이트 중..."
+  },
+  "update.complete": {
+    "other": "업데이트 완료!"
+  },
+  "update.partialSuccess": {
+    "other": "일부 업데이트가 완료되었습니다. 위의 오류를 확인하세요."
+  },
+  "update.skipped": {
+    "other": "업데이트를 건너뜁니다."
+  },
+  "update.noUpdates": {
+    "other": "모든 항목이 최신 상태입니다."
+  },
+  "alias.prompt": {
+    "other": "codex 명령어를 자동 업데이트가 포함된 버전으로 대체하시겠습니까?"
+  },
+  "alias.confirm": {
+    "other": "쉘 설정 파일에 alias를 추가할까요?"
+  },
+  "alias.option.yes": {
+    "other": "예, 설정합니다"
+  },
+  "alias.option.yes.desc": {
+    "other": "쉘 설정 파일에 alias를 추가하고 자동 업데이트를 활성화합니다"
+  },
+  "alias.option.no": {
+    "other": "아니요"
+  },
+  "alias.option.no.desc": {
+    "other": "alias를 설정하지 않고 codex를 바로 실행합니다"
+  },
+  "alias.added": {
+    "other": "alias가 추가되었습니다!"
+  },
+  "alias.reload": {
+    "other": "변경사항을 적용하려면 다음을 실행하세요"
+  },
+  "alias.alreadyExists": {
+    "other": "⚠️  alias가 이미 설정되어 있습니다. 건너뜁니다."
+  },
+  "alias.unsupportedShell": {
+    "other": "현재 쉘은 자동 alias 설정을 지원하지 않습니다. 다음 alias를 직접 쉘 설정 파일에 추가하세요:"
+  },
+  "alias.error": {
+    "other": "alias 설정 오류"
+  },
+  "alias.shellDetectFailed": {
+    "other": "쉘 감지 실패"
+  },
+  "alias.configPathFailed": {
+    "other": "쉘 설정 파일 경로 확인 실패"
+  },
+  "mode.title": {
+    "other": "자동 업데이트 모드를 선택하세요"
+  },
+  "mode.notify.label": {
+    "other": "알림 모드 (권장)"
+  },
+  "mode.notify.desc": {
+    "other": "업데이트가 있으면 알림을 표시하고 Y/N으로 확인합니다"
+  },
+  "mode.auto.label": {
+    "other": "자동 모드"
+  },
+  "mode.auto.desc": {
+    "other": "업데이트를 자동으로 적용합니다 (확인 없음)"
+  },
+  "mode.disabled.label": {
+    "other": "비활성화"
+  },
+  "mode.disabled.desc": {
+    "other": "자동 업데이트 체크를 하지 않습니다"
+  },
+  "mode.help.move": {
+    "other": "이동"
+  },
+  "mode.help.select": {
+    "other": "선택"
+  },
+  "mode.help.default": {
+    "other": "기본값 선택"
+  },
+  "mode.preview.title": {
+    "other": "예시:"
   }
 }

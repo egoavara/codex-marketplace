@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -504,6 +505,14 @@ func RunPluginFinder(manifests map[string]*marketplace.MarketplaceManifest) (*Fi
 	if len(items) == 0 {
 		return nil, fmt.Errorf("%s", i18n.T("NoPluginsAvailable", nil))
 	}
+
+	// Sort by marketplace name, then by plugin name
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Marketplace != items[j].Marketplace {
+			return items[i].Marketplace < items[j].Marketplace
+		}
+		return items[i].Plugin.Name < items[j].Plugin.Name
+	})
 
 	// Run the TUI
 	model := NewModel(items)
