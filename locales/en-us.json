@@ -121,5 +121,107 @@
   },
   "AlreadyInstalled": {
     "other": "'{{.Plugin}}' is already installed in {{.Scope}} scope. Use 'codex-market plugin update' to update."
+  },
+  "update.checking": {
+    "other": "Checking for updates..."
+  },
+  "update.available": {
+    "other": "Updates available:"
+  },
+  "update.typeMarketplace": {
+    "other": "Marketplace"
+  },
+  "update.typePlugin": {
+    "other": "Plugin"
+  },
+  "update.prompt": {
+    "other": "Do you want to update now?"
+  },
+  "update.updating": {
+    "other": "Updating..."
+  },
+  "update.complete": {
+    "other": "Update complete!"
+  },
+  "update.partialSuccess": {
+    "other": "Some updates completed. Check the errors above."
+  },
+  "update.skipped": {
+    "other": "Skipping updates."
+  },
+  "update.noUpdates": {
+    "other": "Everything is up to date."
+  },
+  "alias.prompt": {
+    "other": "Would you like to replace the codex command with an auto-updating version?"
+  },
+  "alias.confirm": {
+    "other": "Add alias to your shell config file?"
+  },
+  "alias.option.yes": {
+    "other": "Yes, set it up"
+  },
+  "alias.option.yes.desc": {
+    "other": "Add alias to shell config and enable auto-update"
+  },
+  "alias.option.no": {
+    "other": "No"
+  },
+  "alias.option.no.desc": {
+    "other": "Skip alias setup and run codex directly"
+  },
+  "alias.added": {
+    "other": "Alias added!"
+  },
+  "alias.reload": {
+    "other": "Run the following to apply changes"
+  },
+  "alias.alreadyExists": {
+    "other": "⚠️  Alias is already set up. Skipping."
+  },
+  "alias.unsupportedShell": {
+    "other": "Your shell does not support automatic alias setup. Please add the following alias to your shell config file manually:"
+  },
+  "alias.error": {
+    "other": "Alias setup error"
+  },
+  "alias.shellDetectFailed": {
+    "other": "Failed to detect shell"
+  },
+  "alias.configPathFailed": {
+    "other": "Failed to get shell config path"
+  },
+  "mode.title": {
+    "other": "Select auto-update mode"
+  },
+  "mode.notify.label": {
+    "other": "Notify mode (Recommended)"
+  },
+  "mode.notify.desc": {
+    "other": "Shows notification when updates are available and asks Y/N"
+  },
+  "mode.auto.label": {
+    "other": "Auto mode"
+  },
+  "mode.auto.desc": {
+    "other": "Automatically applies updates without confirmation"
+  },
+  "mode.disabled.label": {
+    "other": "Disabled"
+  },
+  "mode.disabled.desc": {
+    "other": "Does not check for updates automatically"
+  },
+  "mode.help.move": {
+    "other": "move"
+  },
+  "mode.help.select": {
+    "other": "select"
+  },
+  "mode.help.default": {
+    "other": "use default"
+  },
+  "mode.preview.title": {
+    "other": "Preview:"
   }
 }

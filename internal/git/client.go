@@ -12,7 +12,10 @@ import (
 type Client interface {
 	Clone(url, destPath string) error
 	Pull(repoPath string) error
+	Fetch(repoPath string) error
 	GetCurrentCommit(repoPath string) (string, error)
+	GetRemoteCommit(repoPath, branch string) (string, error)
+	HasUpdates(repoPath string) (bool, error)
 	IsGitRepository(path string) bool
 }
 
@@ -86,6 +89,78 @@ func (c *DefaultClient) IsGitRepository(path string) bool {
 	cmd := exec.Command("git", "-C", path, "rev-parse", "--is-inside-work-tree")
 	err := cmd.Run()
 	return err == nil
+}
+
+// Fetch fetches changes from remote without merging
+func (c *DefaultClient) Fetch(repoPath string) error {
+	cmd := exec.Command("git", "-C", repoPath, "fetch", "--quiet")
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		errMsg := stderr.String()
+		if isAuthError(errMsg) {
+			return &AuthError{URL: repoPath, Message: errMsg}
+		}
+		return fmt.Errorf("git fetch failed: %s", errMsg)
+	}
+
+	return nil
+}
+
+// GetRemoteCommit returns the latest commit SHA of a remote branch
+func (c *DefaultClient) GetRemoteCommit(repoPath, branch string) (string, error) {
+	if branch == "" {
+		branch = "origin/HEAD"
+	} else {
+		branch = "origin/" + branch
+	}
+
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", branch)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("failed to get remote commit: %s", stderr.String())
+	}
+
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+// HasUpdates checks if the local repository is behind the remote
+func (c *DefaultClient) HasUpdates(repoPath string) (bool, error) {
+	// Fetch first to get latest remote state
+	if err := c.Fetch(repoPath); err != nil {
+		return false, err
+	}
+
+	// Get current branch name
+	branchCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD")
+	var branchOut bytes.Buffer
+	branchCmd.Stdout = &branchOut
+	if err := branchCmd.Run(); err != nil {
+		return false, fmt.Errorf("failed to get current branch: %w", err)
+	}
+	branch := strings.TrimSpace(branchOut.String())
+
+	// Get local commit
+	localCommit, err := c.GetCurrentCommit(repoPath)
+	if err != nil {
+		return false, err
+	}
+
+	// Get remote commit
+	remoteCommit, err := c.GetRemoteCommit(repoPath, branch)
+	if err != nil {
+		return false, err
+	}
+
+	return localCommit != remoteCommit, nil
 }
 
 // AuthError represents a git authentication error

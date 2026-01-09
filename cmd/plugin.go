@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoavara/codex-market/internal/autoupdate"
 	"github.com/egoavara/codex-market/internal/config"
 	"github.com/egoavara/codex-market/internal/git"
 	"github.com/egoavara/codex-market/internal/i18n"
@@ -76,11 +77,17 @@ var pluginUpdateCmd = &cobra.Command{
 	Short: "Update installed plugin(s)",
 	Long: `Update all installed plugins or a specific plugin.
 
+By default, only updates plugins with version changes.
+Use --force to reinstall all plugins regardless of version.
+
 Example:
-  codex-market plugin update                     # Update all plugins
+  codex-market plugin update                     # Update plugins with changes
+  codex-market plugin update --force             # Force reinstall all plugins
   codex-market plugin update my-plugin@my-marketplace  # Update specific`,
 	RunE: runPluginUpdate,
 }
+
+var pluginUpdateForce bool
 
 var pluginListCmd = &cobra.Command{
 	Use:   "list",
@@ -112,11 +119,13 @@ Example:
 var (
 	pluginInstallScope   string
 	pluginUninstallScope string
+	pluginQuietMode      bool // Suppress output during batch operations
 )
 
 func init() {
 	pluginInstallCmd.Flags().StringVarP(&pluginInstallScope, "scope", "s", "global", "install scope (global or project)")
 	pluginUninstallCmd.Flags().StringVarP(&pluginUninstallScope, "scope", "s", "global", "uninstall scope (global, project, or all)")
+	pluginUpdateCmd.Flags().BoolVarP(&pluginUpdateForce, "force", "f", false, "force reinstall regardless of version")
 
 	pluginCmd.AddCommand(pluginInstallCmd)
 	pluginCmd.AddCommand(pluginUninstallCmd)
@@ -127,7 +136,9 @@ func init() {
 }
 
 func runPluginInstall(cmd *cobra.Command, args []string) error {
-	cmd.SilenceUsage = true
+	if cmd != nil {
+		cmd.SilenceUsage = true
+	}
 	identifier := args[0]
 
 	// Parse plugin identifier
@@ -199,7 +210,9 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		}))
 	}
 
-	fmt.Printf("Installing %s...\n", pluginID)
+	if !pluginQuietMode {
+		fmt.Printf("Installing %s...\n", pluginID)
+	}
 
 	// Determine Codex skills directory based on scope
 	var codexSkillsDir string
@@ -244,7 +257,7 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("failed to resolve skill path: %w", err)
 			}
 
-			if actualSkillName != skillName {
+			if actualSkillName != skillName && !pluginQuietMode {
 				fmt.Println(i18n.T("SkillNameConflict", map[string]any{
 					"Original": skillName,
 					"Resolved": actualSkillName,
@@ -313,7 +326,7 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("failed to resolve prompt path: %w", err)
 			}
 
-			if actualFileName != fileName {
+			if actualFileName != fileName && !pluginQuietMode {
 				fmt.Println(i18n.T("PromptNameConflict", map[string]any{
 					"Original": fileName,
 					"Resolved": actualFileName,
@@ -375,28 +388,30 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Success message
-	fmt.Println(i18n.T("InstallSuccess", map[string]any{
-		"Plugin":      pluginName,
-		"Marketplace": marketplaceName,
-		"Version":     version,
-	}))
+	if !pluginQuietMode {
+		fmt.Println(i18n.T("InstallSuccess", map[string]any{
+			"Plugin":      pluginName,
+			"Marketplace": marketplaceName,
+			"Version":     version,
+		}))
 
-	if len(installedSkills) > 0 {
-		skillNames := make([]string, len(installedSkills))
-		for i, s := range installedSkills {
-			skillNames[i] = s.Name
+		if len(installedSkills) > 0 {
+			skillNames := make([]string, len(installedSkills))
+			for i, s := range installedSkills {
+				skillNames[i] = s.Name
+			}
+			fmt.Printf("  Skills: %s\n", strings.Join(skillNames, ", "))
+			fmt.Printf("  Skills Location: %s\n", codexSkillsDir)
 		}
-		fmt.Printf("  Skills: %s\n", strings.Join(skillNames, ", "))
-		fmt.Printf("  Skills Location: %s\n", codexSkillsDir)
-	}
 
-	if len(installedCommands) > 0 {
-		commandNames := make([]string, len(installedCommands))
-		for i, c := range installedCommands {
-			commandNames[i] = "/" + c.Name
+		if len(installedCommands) > 0 {
+			commandNames := make([]string, len(installedCommands))
+			for i, c := range installedCommands {
+				commandNames[i] = "/" + c.Name
+			}
+			fmt.Printf("  Commands: %s\n", strings.Join(commandNames, ", "))
+			fmt.Printf("  Commands Location: %s\n", codexPromptsDir)
 		}
-		fmt.Printf("  Commands: %s\n", strings.Join(commandNames, ", "))
-		fmt.Printf("  Commands Location: %s\n", codexPromptsDir)
 	}
 
 	return nil
@@ -435,17 +450,21 @@ func runPluginUninstall(cmd *cobra.Command, args []string) error {
 
 	// Remove skill directories and cache for removed entries
 	for _, entry := range removed {
-		scopeInfo := entry.Scope
-		if entry.Scope == "project" {
-			scopeInfo = fmt.Sprintf("project:%s", entry.ProjectPath)
+		if !pluginQuietMode {
+			scopeInfo := entry.Scope
+			if entry.Scope == "project" {
+				scopeInfo = fmt.Sprintf("project:%s", entry.ProjectPath)
+			}
+			fmt.Printf("Removing from %s...\n", scopeInfo)
 		}
-		fmt.Printf("Removing from %s...\n", scopeInfo)
 
 		// Remove each skill folder
 		for _, skill := range entry.Skills {
 			if err := os.RemoveAll(skill.Path); err != nil {
-				fmt.Printf("  Warning: failed to remove skill %s at %s: %v\n", skill.Name, skill.Path, err)
-			} else {
+				if !pluginQuietMode {
+					fmt.Printf("  Warning: failed to remove skill %s at %s: %v\n", skill.Name, skill.Path, err)
+				}
+			} else if !pluginQuietMode {
 				fmt.Printf("  Removed skill: %s (%s)\n", skill.Name, skill.Path)
 			}
 		}
@@ -453,10 +472,10 @@ func runPluginUninstall(cmd *cobra.Command, args []string) error {
 		// Remove each command file
 		for _, command := range entry.Commands {
 			if err := os.Remove(command.Path); err != nil {
-				if !os.IsNotExist(err) {
+				if !os.IsNotExist(err) && !pluginQuietMode {
 					fmt.Printf("  Warning: failed to remove command %s at %s: %v\n", command.Name, command.Path, err)
 				}
-			} else {
+			} else if !pluginQuietMode {
 				fmt.Printf("  Removed command: /%s (%s)\n", command.Name, command.Path)
 			}
 		}
@@ -464,14 +483,18 @@ func runPluginUninstall(cmd *cobra.Command, args []string) error {
 		// Remove cache directory
 		if entry.Source.CachePath != "" {
 			if err := os.RemoveAll(entry.Source.CachePath); err != nil {
-				fmt.Printf("  Warning: failed to remove cache %s: %v\n", entry.Source.CachePath, err)
+				if !pluginQuietMode {
+					fmt.Printf("  Warning: failed to remove cache %s: %v\n", entry.Source.CachePath, err)
+				}
 			}
 		}
 	}
 
 	// Success message
-	fmt.Printf("\n%s\n", i18n.T("RemoveSuccess", map[string]any{"Plugin": pluginID}))
-	fmt.Printf("Removed %d installation(s)\n", len(removed))
+	if !pluginQuietMode {
+		fmt.Printf("\n%s\n", i18n.T("RemoveSuccess", map[string]any{"Plugin": pluginID}))
+		fmt.Printf("Removed %d installation(s)\n", len(removed))
+	}
 
 	return nil
 }
@@ -518,12 +541,23 @@ func runPluginUsage(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// pluginUpdateItem holds info about a plugin to update
+type pluginUpdateItem struct {
+	pluginID   string
+	entry      plugin.InstalledPluginEntry
+	newVersion string
+	isForce    bool
+}
+
 func runPluginUpdate(cmd *cobra.Command, args []string) error {
 	installed := plugin.GetInstalled()
 	installedPlugins, err := installed.List()
 	if err != nil {
 		return err
 	}
+
+	gitClient := git.NewClient()
+	registry := marketplace.GetRegistry()
 
 	if len(args) == 0 {
 		// Update all installed plugins
@@ -532,26 +566,72 @@ func runPluginUpdate(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		gitClient := git.NewClient()
-		registry := marketplace.GetRegistry()
-
 		// First, update all marketplaces
 		fmt.Println("Updating marketplaces...")
 		if err := updateAllMarketplaces(gitClient, registry); err != nil {
 			return err
 		}
 
-		// Then reinstall all plugins
-		fmt.Println("\nReinstalling plugins...")
-		for pluginID := range installedPlugins.Plugins {
-			fmt.Printf("Reinstalling %s...\n", pluginID)
-			if err := runPluginInstall(nil, []string{pluginID}); err != nil {
-				fmt.Printf("  Error: %v\n", err)
-				continue
+		// Phase 1: Collect plugins that need updates
+		fmt.Println("\nChecking for plugin updates...")
+		var toUpdate []pluginUpdateItem
+		var warnings []string
+
+		for pluginID, entries := range installedPlugins.Plugins {
+			for _, entry := range entries {
+				needsUpdate, newVersion, err := checkPluginNeedsUpdate(pluginID, entry, registry, gitClient)
+				if err != nil {
+					warnings = append(warnings, fmt.Sprintf("  ⚠ %s: %v", pluginID, err))
+					continue
+				}
+
+				if !needsUpdate && !pluginUpdateForce {
+					continue
+				}
+
+				toUpdate = append(toUpdate, pluginUpdateItem{
+					pluginID:   pluginID,
+					entry:      entry,
+					newVersion: newVersion,
+					isForce:    pluginUpdateForce,
+				})
 			}
 		}
 
-		fmt.Println(i18n.T("UpdateAllSuccess", nil))
+		// Show warnings
+		for _, w := range warnings {
+			fmt.Println(w)
+		}
+
+		if len(toUpdate) == 0 {
+			fmt.Println("\n" + i18n.T("update.noUpdates", nil))
+			return nil
+		}
+
+		// Phase 2: Show what will be updated
+		fmt.Println()
+		for _, item := range toUpdate {
+			if item.isForce {
+				fmt.Printf("  • %s (force reinstall)\n", item.pluginID)
+			} else {
+				fmt.Printf("  • %s: %s → %s\n", item.pluginID, item.entry.Version, item.newVersion)
+			}
+		}
+		fmt.Println()
+
+		// Phase 3: Apply updates with spinner
+		updatedCount := 0
+		for _, item := range toUpdate {
+			spinner := autoupdate.NewSpinner(item.pluginID)
+			spinner.Start()
+			err := reinstallPlugin(item.pluginID, item.entry)
+			spinner.Stop(err == nil)
+			if err == nil {
+				updatedCount++
+			}
+		}
+
+		fmt.Printf("\n%d plugin(s) updated\n", updatedCount)
 		return nil
 	}
 
@@ -562,17 +642,125 @@ func runPluginUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	gitClient := git.NewClient()
-	registry := marketplace.GetRegistry()
+	// Get installed entry
+	entries, err := installed.Get(pluginID)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf(i18n.T("NotInstalled", map[string]any{"Plugin": pluginID}))
+	}
 
 	// First update the marketplace
+	fmt.Printf("Updating marketplace %s...\n", marketplaceName)
 	if err := updateMarketplace(gitClient, registry, marketplaceName); err != nil {
 		return err
 	}
 
-	// Then reinstall the plugin
-	fmt.Printf("Reinstalling %s@%s...\n", pluginName, marketplaceName)
-	return runPluginInstall(nil, []string{pluginID})
+	// Check if update needed
+	for _, entry := range entries {
+		needsUpdate, newVersion, err := checkPluginNeedsUpdate(pluginID, entry, registry, gitClient)
+		if err != nil {
+			return err
+		}
+
+		if !needsUpdate && !pluginUpdateForce {
+			fmt.Printf("%s is already up to date (v%s)\n", pluginID, entry.Version)
+			continue
+		}
+
+		fmt.Println()
+		if pluginUpdateForce {
+			fmt.Printf("  • %s (force reinstall)\n", pluginID)
+		} else {
+			fmt.Printf("  • %s@%s: %s → %s\n", pluginName, marketplaceName, entry.Version, newVersion)
+		}
+		fmt.Println()
+
+		spinner := autoupdate.NewSpinner(pluginID)
+		spinner.Start()
+		err = reinstallPlugin(pluginID, entry)
+		spinner.Stop(err == nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkPluginNeedsUpdate checks if a plugin has a newer version available
+func checkPluginNeedsUpdate(pluginID string, entry plugin.InstalledPluginEntry, registry *marketplace.Registry, gitClient git.Client) (bool, string, error) {
+	pluginName, marketplaceName, err := parsePluginID(pluginID)
+	if err != nil {
+		return false, "", err
+	}
+
+	// Get marketplace
+	mp, err := registry.Get(marketplaceName)
+	if err != nil || mp == nil {
+		return false, "", fmt.Errorf("marketplace not found: %s", marketplaceName)
+	}
+
+	// Load manifest
+	manifest, err := marketplace.LoadManifest(mp.InstallLocation)
+	if err != nil {
+		return false, "", err
+	}
+
+	// Find plugin in manifest
+	pluginEntry := manifest.FindPlugin(pluginName)
+	if pluginEntry == nil {
+		return false, "", fmt.Errorf(i18n.T("PluginNotFound", map[string]any{
+			"Plugin":      pluginName,
+			"Marketplace": marketplaceName,
+		}))
+	}
+
+	// Get new version
+	newVersion := pluginEntry.Version
+	if newVersion == "" {
+		commit, err := gitClient.GetCurrentCommit(mp.InstallLocation)
+		if err == nil && len(commit) > 12 {
+			newVersion = commit[:12]
+		} else {
+			newVersion = "latest"
+		}
+	}
+
+	// Compare versions
+	return entry.Version != newVersion, newVersion, nil
+}
+
+// reinstallPlugin uninstalls and reinstalls a plugin (quiet mode)
+func reinstallPlugin(pluginID string, entry plugin.InstalledPluginEntry) error {
+	// Save scope info for reinstall
+	originalScope := entry.Scope
+	originalProjectPath := entry.ProjectPath
+
+	// Enable quiet mode for batch operation
+	pluginQuietMode = true
+	defer func() { pluginQuietMode = false }()
+
+	// Uninstall
+	pluginUninstallScope = entry.Scope
+	if err := runPluginUninstall(nil, []string{pluginID}); err != nil {
+		return fmt.Errorf("uninstall failed: %w", err)
+	}
+
+	// Reinstall with same scope
+	pluginInstallScope = originalScope
+	if originalScope == "project" {
+		// Change to project directory for project scope
+		if originalProjectPath != "" {
+			oldDir, _ := os.Getwd()
+			os.Chdir(originalProjectPath)
+			defer os.Chdir(oldDir)
+		}
+	}
+
+	if err := runPluginInstall(nil, []string{pluginID}); err != nil {
+		return fmt.Errorf("reinstall failed: %w", err)
+	}
+
+	return nil
 }
 
 func runPluginList(cmd *cobra.Command, args []string) error {

@@ -71,10 +71,8 @@ func FuzzySearch(marketplaces map[string]*marketplace.MarketplaceManifest, query
 		}
 	}
 
-	// Sort by score (descending)
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
+	// Sort by marketplace name, then by plugin name
+	sortResults(results)
 
 	return results
 }
@@ -100,7 +98,22 @@ func SimpleSearch(marketplaces map[string]*marketplace.MarketplaceManifest, quer
 		}
 	}
 
+	// Sort by marketplace name, then by plugin name
+	sortResults(results)
+
 	return results
+}
+
+// sortResults sorts results by marketplace name, then by plugin name
+func sortResults(results []SearchResult) {
+	sort.Slice(results, func(i, j int) bool {
+		// First, sort by marketplace name
+		if results[i].Marketplace != results[j].Marketplace {
+			return results[i].Marketplace < results[j].Marketplace
+		}
+		// Then, sort by plugin name
+		return results[i].Plugin.Name < results[j].Plugin.Name
+	})
 }
 
 // matchesQuery checks if a plugin matches the search query
