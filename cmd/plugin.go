@@ -228,61 +228,128 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 
 	// Find and copy skills from the plugin's skills folder
 	skillsSourceDir := filepath.Join(sourcePath, "skills")
-	if _, err := os.Stat(skillsSourceDir); os.IsNotExist(err) {
-		return fmt.Errorf("plugin has no skills folder: %s", skillsSourceDir)
-	}
-
-	// Read skills directories
-	skillEntries, err := os.ReadDir(skillsSourceDir)
-	if err != nil {
-		return fmt.Errorf("failed to read skills folder: %w", err)
-	}
-
 	var installedSkills []plugin.SkillEntry
-	for _, entry := range skillEntries {
-		if !entry.IsDir() {
-			continue
-		}
 
-		skillName := entry.Name()
-		skillSourcePath := filepath.Join(skillsSourceDir, skillName)
-
-		// Check if SKILL.md exists
-		skillMdPath := filepath.Join(skillSourcePath, "SKILL.md")
-		if _, err := os.Stat(skillMdPath); os.IsNotExist(err) {
-			continue // Skip directories without SKILL.md
-		}
-
-		// Copy skill to Codex skills directory
-		skillDestPath, actualSkillName, err := plugin.ResolveUniqueSkillPath(codexSkillsDir, skillName)
+	if _, err := os.Stat(skillsSourceDir); err == nil {
+		// Read skills directories
+		skillEntries, err := os.ReadDir(skillsSourceDir)
 		if err != nil {
-			return fmt.Errorf("failed to resolve skill path: %w", err)
+			return fmt.Errorf("failed to read skills folder: %w", err)
 		}
 
-		if actualSkillName != skillName && !pluginQuietMode {
-			fmt.Println(i18n.T("SkillNameConflict", map[string]any{
-				"Original": skillName,
-				"Resolved": actualSkillName,
-			}))
-		}
+		for _, entry := range skillEntries {
+			if !entry.IsDir() {
+				continue
+			}
 
-		if err := config.EnsureDir(skillDestPath); err != nil {
-			return fmt.Errorf("failed to create skill directory: %w", err)
-		}
+			skillName := entry.Name()
+			skillSourcePath := filepath.Join(skillsSourceDir, skillName)
 
-		if err := plugin.CopyDir(skillSourcePath, skillDestPath); err != nil {
-			os.RemoveAll(skillDestPath)
-			return fmt.Errorf("failed to copy skill files: %w", err)
-		}
+			// Check if SKILL.md exists
+			skillMdPath := filepath.Join(skillSourcePath, "SKILL.md")
+			if _, err := os.Stat(skillMdPath); os.IsNotExist(err) {
+				continue // Skip directories without SKILL.md
+			}
 
-		installedSkills = append(installedSkills, plugin.SkillEntry{
-			Name: actualSkillName,
-			Path: skillDestPath,
-		})
+			// Copy skill to Codex skills directory
+			skillDestPath, actualSkillName, err := plugin.ResolveUniqueSkillPath(codexSkillsDir, skillName)
+			if err != nil {
+				return fmt.Errorf("failed to resolve skill path: %w", err)
+			}
+
+			if actualSkillName != skillName && !pluginQuietMode {
+				fmt.Println(i18n.T("SkillNameConflict", map[string]any{
+					"Original": skillName,
+					"Resolved": actualSkillName,
+				}))
+			}
+
+			if err := config.EnsureDir(skillDestPath); err != nil {
+				return fmt.Errorf("failed to create skill directory: %w", err)
+			}
+
+			if err := plugin.CopyDir(skillSourcePath, skillDestPath); err != nil {
+				os.RemoveAll(skillDestPath)
+				return fmt.Errorf("failed to copy skill files: %w", err)
+			}
+
+			installedSkills = append(installedSkills, plugin.SkillEntry{
+				Name: actualSkillName,
+				Path: skillDestPath,
+			})
+		}
 	}
 
-	if len(installedSkills) == 0 {
-		return fmt.Errorf("no valid skills found in plugin (SKILL.md required)")
+	// Find and copy commands from the plugin's commands folder
+	commandsSourceDir := filepath.Join(sourcePath, "commands")
+	var installedCommands []plugin.CommandEntry
+	var codexPromptsDir string
+
+	if _, err := os.Stat(commandsSourceDir); err == nil {
+		// Determine Codex prompts directory based on scope
+		if pluginInstallScope == "project" {
+			codexPromptsDir = config.ProjectCodexPromptsDir()
+			if codexPromptsDir == "" {
+				cwd, _ := os.Getwd()
+				codexPromptsDir = filepath.Join(cwd, ".codex", "prompts")
+			}
+		} else {
+			codexPromptsDir = config.CodexPromptsDir()
+		}
+
+		// Ensure prompts directory exists
+		if err := config.EnsureDir(codexPromptsDir); err != nil {
+			return fmt.Errorf("failed to create prompts directory: %w", err)
+		}
+
+		// Read command files
+		commandEntries, err := os.ReadDir(commandsSourceDir)
+		if err != nil {
+			return fmt.Errorf("failed to read commands folder: %w", err)
+		}
+
+		for _, entry := range commandEntries {
+			if entry.IsDir() {
+				continue // Skip directories
+			}
+
+			fileName := entry.Name()
+			if !strings.HasSuffix(fileName, ".md") {
+				continue // Skip non-markdown files
+			}
+
+			commandSourcePath := filepath.Join(commandsSourceDir, fileName)
+
+			// Resolve unique path (handle conflicts)
+			commandDestPath, actualFileName, err := plugin.ResolveUniquePromptPath(codexPromptsDir, fileName)
+			if err != nil {
+				return fmt.Errorf("failed to resolve prompt path: %w", err)
+			}
+
+			if actualFileName != fileName && !pluginQuietMode {
+				fmt.Println(i18n.T("PromptNameConflict", map[string]any{
+					"Original": fileName,
+					"Resolved": actualFileName,
+				}))
+			}
+
+			// Copy command file
+			if err := plugin.CopyFile(commandSourcePath, commandDestPath); err != nil {
+				return fmt.Errorf("failed to copy command file %s: %w", fileName, err)
+			}
+
+			// Command name without .md extension
+			commandName := strings.TrimSuffix(actualFileName, ".md")
+			installedCommands = append(installedCommands, plugin.CommandEntry{
+				Name: commandName,
+				Path: commandDestPath,
+			})
+		}
+	}
+
+	// Validate: at least one skill or command must be installed
+	if len(installedSkills) == 0 && len(installedCommands) == 0 {
+		return fmt.Errorf("no valid skills or commands found in plugin")
 	}
 
 	// Also keep a cache copy for tracking
@@ -307,7 +374,8 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 			URL:         mp.Source.URL,
 			CachePath:   cachePath,
 		},
-		Skills: installedSkills,
+		Skills:   installedSkills,
+		Commands: installedCommands,
 	}
 
 	if pluginInstallScope == "project" {
@@ -326,12 +394,24 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 			"Marketplace": marketplaceName,
 			"Version":     version,
 		}))
-		skillNames := make([]string, len(installedSkills))
-		for i, s := range installedSkills {
-			skillNames[i] = s.Name
+
+		if len(installedSkills) > 0 {
+			skillNames := make([]string, len(installedSkills))
+			for i, s := range installedSkills {
+				skillNames[i] = s.Name
+			}
+			fmt.Printf("  Skills: %s\n", strings.Join(skillNames, ", "))
+			fmt.Printf("  Skills Location: %s\n", codexSkillsDir)
 		}
-		fmt.Printf("  Skills: %s\n", strings.Join(skillNames, ", "))
-		fmt.Printf("  Location: %s\n", codexSkillsDir)
+
+		if len(installedCommands) > 0 {
+			commandNames := make([]string, len(installedCommands))
+			for i, c := range installedCommands {
+				commandNames[i] = "/" + c.Name
+			}
+			fmt.Printf("  Commands: %s\n", strings.Join(commandNames, ", "))
+			fmt.Printf("  Commands Location: %s\n", codexPromptsDir)
+		}
 	}
 
 	return nil
@@ -389,6 +469,17 @@ func runPluginUninstall(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Remove each command file
+		for _, command := range entry.Commands {
+			if err := os.Remove(command.Path); err != nil {
+				if !os.IsNotExist(err) && !pluginQuietMode {
+					fmt.Printf("  Warning: failed to remove command %s at %s: %v\n", command.Name, command.Path, err)
+				}
+			} else if !pluginQuietMode {
+				fmt.Printf("  Removed command: /%s (%s)\n", command.Name, command.Path)
+			}
+		}
+
 		// Remove cache directory
 		if entry.Source.CachePath != "" {
 			if err := os.RemoveAll(entry.Source.CachePath); err != nil {
@@ -432,9 +523,17 @@ func runPluginUsage(cmd *cobra.Command, args []string) error {
 		fmt.Printf("    Version: %s\n", entry.Version)
 		fmt.Printf("    Source: %s\n", entry.Source.URL)
 		fmt.Printf("    Installed: %s\n", entry.InstalledAt)
-		fmt.Printf("    Skills:\n")
-		for _, skill := range entry.Skills {
-			fmt.Printf("      - %s: %s\n", skill.Name, skill.Path)
+		if len(entry.Skills) > 0 {
+			fmt.Printf("    Skills:\n")
+			for _, skill := range entry.Skills {
+				fmt.Printf("      - %s: %s\n", skill.Name, skill.Path)
+			}
+		}
+		if len(entry.Commands) > 0 {
+			fmt.Printf("    Commands:\n")
+			for _, command := range entry.Commands {
+				fmt.Printf("      - /%s: %s\n", command.Name, command.Path)
+			}
 		}
 	}
 
@@ -683,9 +782,17 @@ func runPluginList(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s (v%s)\n", id, entry.Version)
 			fmt.Printf("    Scope: %s\n", entry.Scope)
 			fmt.Printf("    Source: %s\n", entry.Source.URL)
-			fmt.Printf("    Skills:\n")
-			for _, skill := range entry.Skills {
-				fmt.Printf("      - %s: %s\n", skill.Name, skill.Path)
+			if len(entry.Skills) > 0 {
+				fmt.Printf("    Skills:\n")
+				for _, skill := range entry.Skills {
+					fmt.Printf("      - %s: %s\n", skill.Name, skill.Path)
+				}
+			}
+			if len(entry.Commands) > 0 {
+				fmt.Printf("    Commands:\n")
+				for _, command := range entry.Commands {
+					fmt.Printf("      - /%s: %s\n", command.Name, command.Path)
+				}
 			}
 			fmt.Printf("    Installed: %s\n", entry.InstalledAt)
 			fmt.Println()
