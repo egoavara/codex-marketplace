@@ -33,14 +33,15 @@ type InstalledPlugins struct {
 
 // InstalledPluginEntry represents a single installed plugin entry
 type InstalledPluginEntry struct {
-	Scope       string         `json:"scope"`                 // "global" or "project"
-	ProjectPath string         `json:"projectPath,omitempty"` // only for project scope
-	Version     string         `json:"version"`
-	InstalledAt string         `json:"installedAt"`
-	LastUpdated string         `json:"lastUpdated"`
-	Source      PluginSource   `json:"source"`                // where it was installed from
-	Skills      []SkillEntry   `json:"skills"`                // installed skills with paths
-	Commands    []CommandEntry `json:"commands,omitempty"`    // installed commands with paths
+	Scope       string           `json:"scope"`                 // "global" or "project"
+	ProjectPath string           `json:"projectPath,omitempty"` // only for project scope
+	Version     string           `json:"version"`
+	InstalledAt string           `json:"installedAt"`
+	LastUpdated string           `json:"lastUpdated"`
+	Source      PluginSource     `json:"source"`                // where it was installed from
+	Skills      []SkillEntry     `json:"skills"`                // installed skills with paths
+	Commands    []CommandEntry   `json:"commands,omitempty"`    // installed commands with paths
+	MCPServers  []MCPServerEntry `json:"mcpServers,omitempty"`  // installed MCP servers
 }
 
 // PluginSource represents the source of an installed plugin
@@ -60,6 +61,12 @@ type SkillEntry struct {
 type CommandEntry struct {
 	Name string `json:"name"` // command name (without .md extension)
 	Path string `json:"path"` // full path to command file (for deletion)
+}
+
+// MCPServerEntry represents an installed MCP server
+type MCPServerEntry struct {
+	Name   string `json:"name"`   // MCP server name (key in config.toml)
+	Plugin string `json:"plugin"` // plugin ID for marker matching (e.g., "context7@claude-plugins-official")
 }
 
 // NewInstalledPlugins creates a new InstalledPlugins instance

@@ -217,5 +217,17 @@
   },
   "mode.preview.title": {
     "other": "예시:"
+  },
+  "MCPServersInstalled": {
+    "other": "  MCP 서버: {{.Servers}}"
+  },
+  "MCPServersRemoved": {
+    "other": "  삭제된 MCP 서버: {{.Servers}}"
+  },
+  "MCPServerExists": {
+    "other": "  주의: MCP 서버 '{{.Name}}'이(가) 이미 존재합니다 ({{.Manager}}가 관리), 건너뜁니다"
+  },
+  "MCPConfigError": {
+    "other": "MCP 설정 업데이트 실패"
   }
 }
