@@ -409,7 +409,7 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 
 				if len(servers) > 0 {
 					// Add MCP servers to config.toml with markers
-					err = mcp.AddMCPServers(config.CodexConfigPath(), pluginName, marketplaceName, servers)
+					mismatches, err := mcp.AddMCPServers(config.CodexConfigPath(), pluginName, marketplaceName, servers)
 					if err != nil {
 						if !pluginQuietMode {
 							fmt.Printf("Warning: %s: %v\n", i18n.T("MCPConfigError", nil), err)
@@ -420,6 +420,15 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 								Name:   name,
 								Plugin: fmt.Sprintf("%s@%s", pluginName, marketplaceName),
 							})
+						}
+						// Warn about env var mismatches
+						if !pluginQuietMode {
+							for _, m := range mismatches {
+								fmt.Println(i18n.T("MCPEnvVarMismatch", map[string]any{
+									"Key":     m.Key,
+									"VarName": m.VarName,
+								}))
+							}
 						}
 					}
 				}

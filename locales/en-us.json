@@ -235,5 +235,8 @@
   },
   "MCPConfigError": {
     "other": "Failed to update MCP configuration"
+  },
+  "MCPEnvVarMismatch": {
+    "other": "  Note: Env '{{.Key}}' references '{{.VarName}}', but Codex only supports same-name forwarding. Set the '{{.Key}}' env var instead."
   }
 }

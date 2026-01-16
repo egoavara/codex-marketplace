@@ -60,14 +60,15 @@ func ParseMCPJSON(data []byte) (map[string]MCPServerConfig, error) {
 }
 
 // AddMCPServers adds MCP server configurations to config.toml with marker comments
-func AddMCPServers(configPath string, pluginName string, marketplace string, servers map[string]MCPServerConfig) error {
+// Returns any env var mismatches found (where key name differs from referenced variable)
+func AddMCPServers(configPath string, pluginName string, marketplace string, servers map[string]MCPServerConfig) ([]EnvVarMismatch, error) {
 	// Read existing config
 	content, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			content = []byte{}
 		} else {
-			return fmt.Errorf("failed to read config file: %w", err)
+			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
 	}
 
@@ -75,22 +76,22 @@ func AddMCPServers(configPath string, pluginName string, marketplace string, ser
 	contentStr := RemoveMarkedBlock(string(content), pluginName)
 
 	// Generate new TOML content for MCP servers
-	tomlContent := GenerateMCPServerTOML(pluginName, marketplace, servers)
+	tomlContent, mismatches := GenerateMCPServerTOML(pluginName, marketplace, servers)
 
 	// Append new content
 	newContent := strings.TrimRight(contentStr, "\n") + "\n" + tomlContent
 
 	// Ensure directory exists
 	if err := os.MkdirAll(strings.TrimSuffix(configPath, "/config.toml"), 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	// Write back to file
 	if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	return nil
+	return mismatches, nil
 }
 
 // RemoveMCPServers removes MCP server configurations by plugin marker
@@ -124,8 +125,10 @@ func HasMCPServerMarker(configPath string, pluginName string) bool {
 }
 
 // GenerateMCPServerTOML generates TOML content for MCP servers with markers
-func GenerateMCPServerTOML(pluginName, marketplace string, servers map[string]MCPServerConfig) string {
+// Returns the TOML content and any env var mismatches found
+func GenerateMCPServerTOML(pluginName, marketplace string, servers map[string]MCPServerConfig) (string, []EnvVarMismatch) {
 	var sb strings.Builder
+	var allMismatches []EnvVarMismatch
 
 	sb.WriteString(fmt.Sprintf("\n%s plugin=%s marketplace=%s\n", MarkerStartPrefix, pluginName, marketplace))
 
@@ -139,13 +142,14 @@ func GenerateMCPServerTOML(pluginName, marketplace string, servers map[string]MC
 	for _, name := range serverNames {
 		config := servers[name]
 		sb.WriteString(fmt.Sprintf("[mcp_servers.%q]\n", name))
-		writeMCPConfigToTOML(&sb, name, config)
+		mismatches := writeMCPConfigToTOML(&sb, name, config)
+		allMismatches = append(allMismatches, mismatches...)
 		sb.WriteString("\n")
 	}
 
 	sb.WriteString(fmt.Sprintf("%s plugin=%s\n", MarkerEndPrefix, pluginName))
 
-	return sb.String()
+	return sb.String(), allMismatches
 }
 
 // RemoveMarkedBlock removes a marked block from TOML content
@@ -161,9 +165,16 @@ func RemoveMarkedBlock(content string, pluginName string) string {
 	return re.ReplaceAllString(content, "")
 }
 
+// EnvVarMismatch represents a case where env key differs from referenced variable
+type EnvVarMismatch struct {
+	Key     string // The key name (e.g., "TEST")
+	VarName string // The referenced variable name (e.g., "TEST_NOT")
+}
+
 // writeMCPConfigToTOML writes an MCPServerConfig to TOML format
 // Converts env values with ${VAR} pattern to env_vars array for Codex compatibility
-func writeMCPConfigToTOML(sb *strings.Builder, name string, config MCPServerConfig) {
+// Returns a list of mismatches where key name differs from referenced variable name
+func writeMCPConfigToTOML(sb *strings.Builder, name string, config MCPServerConfig) []EnvVarMismatch {
 	if config.Type != "" {
 		sb.WriteString(fmt.Sprintf("type = %q\n", config.Type))
 	}
@@ -182,6 +193,8 @@ func writeMCPConfigToTOML(sb *strings.Builder, name string, config MCPServerConf
 		sb.WriteString("]\n")
 	}
 
+	var mismatches []EnvVarMismatch
+
 	if len(config.Env) > 0 {
 		// Separate env vars into two categories:
 		// 1. env_vars: shell environment variable references (${VAR} pattern)
@@ -195,7 +208,16 @@ func writeMCPConfigToTOML(sb *strings.Builder, name string, config MCPServerConf
 		for k, v := range config.Env {
 			if matches := envRefPattern.FindStringSubmatch(v); len(matches) > 1 {
 				// This is an environment variable reference
-				envVars = append(envVars, matches[1])
+				// Use the key name for env_vars (Codex forwards shell env var with this name)
+				envVars = append(envVars, k)
+
+				// Track if key name differs from referenced variable name
+				if k != matches[1] {
+					mismatches = append(mismatches, EnvVarMismatch{
+						Key:     k,
+						VarName: matches[1],
+					})
+				}
 			} else {
 				// This is a literal value
 				literalEnv[k] = v
@@ -226,6 +248,8 @@ func writeMCPConfigToTOML(sb *strings.Builder, name string, config MCPServerConf
 			}
 		}
 	}
+
+	return mismatches
 }
 
 // GetExistingMCPServerNames returns the names of existing MCP servers from config.toml
