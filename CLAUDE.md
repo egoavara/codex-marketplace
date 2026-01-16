@@ -2,6 +2,16 @@
 
 Codex를 위한 claude-plugin 호환 설치기입니다.
 
+## 중요: Codex vs Claude Code
+
+> **MUST** 이 프로젝트는 **Codex**를 위한 도구입니다. **Claude Code가 아닙니다.**
+>
+> - 설정 파일: `~/.codex/config.toml` (NOT `~/.claude.json`)
+> - MCP 서버 설정: `[mcp_servers.XXX]` 섹션 사용
+> - 환경변수 전달: `env_vars = ["VAR_NAME"]` 형식 (Codex 스펙)
+>
+> Claude Code의 설정 파일(`~/.claude.json`, `~/.claude/settings.json`)을 수정하면 안 됩니다.
+
 ## 프로젝트 목적
 
 - Codex에 claude-plugin 형식의 플러그인을 설치하고 관리
