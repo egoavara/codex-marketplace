@@ -175,9 +175,34 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	// Get source path
 	sourcePath := manifest.GetPluginSourcePath(mp.InstallLocation, pluginEntry)
 
-	// Check if source exists
-	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-		return fmt.Errorf("plugin source not found: %s", sourcePath)
+	// For remote sources (url, github), clone to temp directory
+	var tempCloneDir string
+	if pluginEntry.IsRemoteSource() {
+		gitClient := git.NewClient()
+		remoteURL := pluginEntry.Source.GetSourceURL()
+
+		// Create temp directory for cloning
+		tempCloneDir, err = os.MkdirTemp("", "codex-plugin-*")
+		if err != nil {
+			return fmt.Errorf("failed to create temp directory: %w", err)
+		}
+		defer os.RemoveAll(tempCloneDir) // Clean up temp directory when done
+
+		if !pluginQuietMode {
+			fmt.Printf("Cloning %s...\n", remoteURL)
+		}
+
+		if err := gitClient.Clone(remoteURL, tempCloneDir); err != nil {
+			return fmt.Errorf("failed to clone plugin repository: %w", err)
+		}
+
+		// Use cloned directory as source path
+		sourcePath = tempCloneDir
+	} else {
+		// Check if source exists (only for local path sources)
+		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+			return fmt.Errorf("plugin source not found: %s", sourcePath)
+		}
 	}
 
 	// Determine version
@@ -347,9 +372,9 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Validate: at least one skill or command must be installed
-	if len(installedSkills) == 0 && len(installedCommands) == 0 {
-		return fmt.Errorf("no valid skills or commands found in plugin")
+	// Warn if no skills or commands found (but continue installation)
+	if len(installedSkills) == 0 && len(installedCommands) == 0 && !pluginQuietMode {
+		fmt.Println("Warning: no skills or commands found in plugin")
 	}
 
 	// Also keep a cache copy for tracking
