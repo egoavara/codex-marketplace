@@ -57,6 +57,12 @@ func CodexDir() string {
 	return filepath.Join(homeDir, ".codex")
 }
 
+// CodexConfigPath returns the Codex config.toml file path
+// ~/.codex/config.toml
+func CodexConfigPath() string {
+	return filepath.Join(CodexDir(), "config.toml")
+}
+
 // CodexSkillsDir returns the Codex global skills directory path
 // ~/.codex/skills/
 func CodexSkillsDir() string {

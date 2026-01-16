@@ -217,5 +217,20 @@
   },
   "mode.preview.title": {
     "other": "예시:"
+  },
+  "MCPServersInstalled": {
+    "other": "  MCP 서버: {{.Servers}}"
+  },
+  "MCPServersRemoved": {
+    "other": "  삭제된 MCP 서버: {{.Servers}}"
+  },
+  "MCPServerExists": {
+    "other": "  주의: MCP 서버 '{{.Name}}'이(가) 이미 존재합니다 ({{.Manager}}가 관리), 건너뜁니다"
+  },
+  "MCPConfigError": {
+    "other": "MCP 설정 업데이트 실패"
+  },
+  "MCPEnvVarMismatch": {
+    "other": "  주의: 환경변수 '{{.Key}}'가 '{{.VarName}}'을 참조하지만, Codex는 동일한 이름만 지원합니다. '{{.Key}}' 환경변수를 설정하세요."
   }
 }

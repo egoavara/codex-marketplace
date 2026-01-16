@@ -223,5 +223,20 @@
   },
   "mode.preview.title": {
     "other": "Preview:"
+  },
+  "MCPServersInstalled": {
+    "other": "  MCP Servers: {{.Servers}}"
+  },
+  "MCPServersRemoved": {
+    "other": "  Removed MCP servers: {{.Servers}}"
+  },
+  "MCPServerExists": {
+    "other": "  Note: MCP server '{{.Name}}' already exists (managed by {{.Manager}}), skipping"
+  },
+  "MCPConfigError": {
+    "other": "Failed to update MCP configuration"
+  },
+  "MCPEnvVarMismatch": {
+    "other": "  Note: Env '{{.Key}}' references '{{.VarName}}', but Codex only supports same-name forwarding. Set the '{{.Key}}' env var instead."
   }
 }

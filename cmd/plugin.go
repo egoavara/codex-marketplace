@@ -12,6 +12,7 @@ import (
 	"github.com/egoavara/codex-market/internal/git"
 	"github.com/egoavara/codex-market/internal/i18n"
 	"github.com/egoavara/codex-market/internal/marketplace"
+	"github.com/egoavara/codex-market/internal/mcp"
 	"github.com/egoavara/codex-market/internal/plugin"
 	"github.com/egoavara/codex-market/internal/search"
 	"github.com/egoavara/codex-market/internal/tui"
@@ -175,9 +176,34 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	// Get source path
 	sourcePath := manifest.GetPluginSourcePath(mp.InstallLocation, pluginEntry)
 
-	// Check if source exists
-	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-		return fmt.Errorf("plugin source not found: %s", sourcePath)
+	// For remote sources (url, github), clone to temp directory
+	var tempCloneDir string
+	if pluginEntry.IsRemoteSource() {
+		gitClient := git.NewClient()
+		remoteURL := pluginEntry.Source.GetSourceURL()
+
+		// Create temp directory for cloning
+		tempCloneDir, err = os.MkdirTemp("", "codex-plugin-*")
+		if err != nil {
+			return fmt.Errorf("failed to create temp directory: %w", err)
+		}
+		defer os.RemoveAll(tempCloneDir) // Clean up temp directory when done
+
+		if !pluginQuietMode {
+			fmt.Printf("Cloning %s...\n", remoteURL)
+		}
+
+		if err := gitClient.Clone(remoteURL, tempCloneDir); err != nil {
+			return fmt.Errorf("failed to clone plugin repository: %w", err)
+		}
+
+		// Use cloned directory as source path
+		sourcePath = tempCloneDir
+	} else {
+		// Check if source exists (only for local path sources)
+		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+			return fmt.Errorf("plugin source not found: %s", sourcePath)
+		}
 	}
 
 	// Determine version
@@ -347,9 +373,72 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Validate: at least one skill or command must be installed
-	if len(installedSkills) == 0 && len(installedCommands) == 0 {
-		return fmt.Errorf("no valid skills or commands found in plugin")
+	// Find and install MCP servers from .mcp.json
+	mcpJsonPath := filepath.Join(sourcePath, ".mcp.json")
+	var installedMCPServers []plugin.MCPServerEntry
+
+	if _, err := os.Stat(mcpJsonPath); err == nil {
+		mcpData, err := os.ReadFile(mcpJsonPath)
+		if err != nil {
+			if !pluginQuietMode {
+				fmt.Printf("Warning: failed to read .mcp.json: %v\n", err)
+			}
+		} else {
+			servers, err := mcp.ParseMCPJSON(mcpData)
+			if err != nil {
+				if !pluginQuietMode {
+					fmt.Printf("Warning: failed to parse .mcp.json: %v\n", err)
+				}
+			} else if len(servers) > 0 {
+				// Check for conflicts with user-managed servers
+				conflicts, err := mcp.CheckServerNameConflicts(config.CodexConfigPath(), servers)
+				if err != nil && !pluginQuietMode {
+					fmt.Printf("Warning: failed to check MCP server conflicts: %v\n", err)
+				}
+
+				for _, conflict := range conflicts {
+					if !pluginQuietMode {
+						fmt.Println(i18n.T("MCPServerExists", map[string]any{
+							"Name":    conflict,
+							"Manager": "user",
+						}))
+					}
+					// Remove conflicting server from installation
+					delete(servers, conflict)
+				}
+
+				if len(servers) > 0 {
+					// Add MCP servers to config.toml with markers
+					mismatches, err := mcp.AddMCPServers(config.CodexConfigPath(), pluginName, marketplaceName, servers)
+					if err != nil {
+						if !pluginQuietMode {
+							fmt.Printf("Warning: %s: %v\n", i18n.T("MCPConfigError", nil), err)
+						}
+					} else {
+						for name := range servers {
+							installedMCPServers = append(installedMCPServers, plugin.MCPServerEntry{
+								Name:   name,
+								Plugin: fmt.Sprintf("%s@%s", pluginName, marketplaceName),
+							})
+						}
+						// Warn about env var mismatches
+						if !pluginQuietMode {
+							for _, m := range mismatches {
+								fmt.Println(i18n.T("MCPEnvVarMismatch", map[string]any{
+									"Key":     m.Key,
+									"VarName": m.VarName,
+								}))
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Warn if no skills, commands, or MCP servers found (but continue installation)
+	if len(installedSkills) == 0 && len(installedCommands) == 0 && len(installedMCPServers) == 0 && !pluginQuietMode {
+		fmt.Println("Warning: no skills, commands, or MCP servers found in plugin")
 	}
 
 	// Also keep a cache copy for tracking
@@ -374,8 +463,9 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 			URL:         mp.Source.URL,
 			CachePath:   cachePath,
 		},
-		Skills:   installedSkills,
-		Commands: installedCommands,
+		Skills:     installedSkills,
+		Commands:   installedCommands,
+		MCPServers: installedMCPServers,
 	}
 
 	if pluginInstallScope == "project" {
@@ -411,6 +501,17 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Printf("  Commands: %s\n", strings.Join(commandNames, ", "))
 			fmt.Printf("  Commands Location: %s\n", codexPromptsDir)
+		}
+
+		if len(installedMCPServers) > 0 {
+			mcpNames := make([]string, len(installedMCPServers))
+			for i, m := range installedMCPServers {
+				mcpNames[i] = m.Name
+			}
+			fmt.Println(i18n.T("MCPServersInstalled", map[string]any{
+				"Servers": strings.Join(mcpNames, ", "),
+			}))
+			fmt.Printf("  MCP Config: %s\n", config.CodexConfigPath())
 		}
 	}
 
@@ -480,6 +581,30 @@ func runPluginUninstall(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Remove MCP servers from config.toml (by marker)
+		if len(entry.MCPServers) > 0 {
+			// Extract plugin name from pluginID (format: pluginName@marketplace)
+			pluginName := pluginID
+			if idx := strings.Index(pluginID, "@"); idx > 0 {
+				pluginName = pluginID[:idx]
+			}
+
+			err := mcp.RemoveMCPServers(config.CodexConfigPath(), pluginName)
+			if err != nil {
+				if !pluginQuietMode {
+					fmt.Printf("  Warning: %s: %v\n", i18n.T("MCPConfigError", nil), err)
+				}
+			} else if !pluginQuietMode {
+				mcpNames := make([]string, len(entry.MCPServers))
+				for i, m := range entry.MCPServers {
+					mcpNames[i] = m.Name
+				}
+				fmt.Println(i18n.T("MCPServersRemoved", map[string]any{
+					"Servers": strings.Join(mcpNames, ", "),
+				}))
+			}
+		}
+
 		// Remove cache directory
 		if entry.Source.CachePath != "" {
 			if err := os.RemoveAll(entry.Source.CachePath); err != nil {
@@ -534,6 +659,13 @@ func runPluginUsage(cmd *cobra.Command, args []string) error {
 			for _, command := range entry.Commands {
 				fmt.Printf("      - /%s: %s\n", command.Name, command.Path)
 			}
+		}
+		if len(entry.MCPServers) > 0 {
+			fmt.Printf("    MCP Servers:\n")
+			for _, mcpServer := range entry.MCPServers {
+				fmt.Printf("      - %s\n", mcpServer.Name)
+			}
+			fmt.Printf("    MCP Config: %s\n", config.CodexConfigPath())
 		}
 	}
 
